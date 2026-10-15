@@ -9,7 +9,7 @@ See design.md §2 for rationale.
 
 from __future__ import annotations
 
-from typing import Literal, Protocol, TypedDict
+from typing import Literal, Protocol, TypedDict, runtime_checkable
 
 # ---------------------------------------------------------------------------
 # Type aliases
@@ -93,6 +93,7 @@ class ChooseStartFn(Protocol):
 # ---------------------------------------------------------------------------
 
 
+@runtime_checkable
 class DetectorAdapter(Protocol):
     """Interface for detector adapters (LLM, static, fake)."""
 

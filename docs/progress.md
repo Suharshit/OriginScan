@@ -69,3 +69,22 @@
 - L3: includes cross-file callees/callers, respects cap at 100/500/1k/5k/15k
 - L3 falls back to L2 gracefully when no call graph is provided
 - Unresolved external calls (libc) correctly tracked but not included in context
+
+## Phase 5: Integration and Pilot Support (Weeks 6-7)
+
+- [x] 5.1 Integration test: runner -> `build_context` -> `detect` (FakeDetector) across L1/L2/L3
+- [x] 5.2 `choose_start(origin, policy)` — deterministic level chooser (default: human→L1, ai→L2)
+- [x] 5.3 `run_experiment()` orchestrator with timing metadata, config hash, token stats
+- [x] 5.4 `FakeDetector` — deterministic detector satisfying `DetectorAdapter` protocol
+- [x] 5.5 `Slot`, `SlotResult`, `RunResult` data classes with full metadata
+- [x] 5.6 `compute_token_stats()` — per-level min/max/mean/median token statistics
+- [x] 5.7 Error handling: bad slots caught without crashing the run
+- [x] 5.8 Custom policy, detector, counter, and cap overrides supported
+
+### Notes
+- 170 tests passing, ruff clean
+- Integration test covers L1/L2/L3 end-to-end with FakeDetector
+- Level selection verified: human→L1, ai→L2 by default policy
+- Multiple runs per slot supported (runs_per_slot=N)
+- Token cap invariant holds across all levels and fixtures
+- Error in one slot does not crash the entire experiment run
