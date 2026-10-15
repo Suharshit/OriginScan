@@ -1,0 +1,107 @@
+name: 'OriginScan PR Scanner'
+description: 'Scan pull requests for vulnerabilities with context-adaptive depth based on code provenance.'
+
+inputs:
+  repo-path:
+    description: 'Path to the repository root'
+    required: false
+    default: '.'
+  policy:
+    description: 'Path to policy.yaml'
+    required: false
+    default: ''
+  budget:
+    description: 'Per-PR token budget cap'
+    required: false
+    default: ''
+  format:
+    description: 'Output formats (comma-separated: json, md)'
+    required: false
+    default: 'json,md'
+  fail-on-findings:
+    description: 'Exit with code 1 if any findings'
+    required: false
+    default: 'false'
+  dry-run:
+    description: 'Print comment body instead of posting'
+    required: false
+    default: 'false'
+  github-token:
+    description: 'GitHub token for posting PR comments'
+    required: false
+    default: '${{ github.token }}'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install OriginScan
+      shell: bash
+      run: pip install -e "${{ inputs.repo-path }}"
+
+    - name: Generate diff
+      shell: bash
+      id: diff
+      run: |
+        cd "${{ inputs.repo-path }}"
+        git diff "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}" > /tmp/originscan_pr.diff
+        echo "diff_file=/tmp/originscan_pr.diff" >> $GITHUB_OUTPUT
+
+    - name: Run OriginScan
+      shell: bash
+      run: |
+        ARGS="--repo ${{ inputs.repo-path }} --diff ${{ steps.diff.outputs.diff_file }}"
+        if [ -n "${{ inputs.policy }}" ]; then
+          ARGS="$ARGS --policy ${{ inputs.policy }}"
+        fi
+        if [ -n "${{ inputs.budget }}" ]; then
+          ARGS="$ARGS --budget ${{ inputs.budget }}"
+        fi
+        ARGS="$ARGS --format ${{ inputs.format }}"
+        if [ "${{ inputs.fail-on-findings }}" = "true" ]; then
+          ARGS="$ARGS --fail-on-findings"
+        fi
+        originscan scan $ARGS --out /tmp/originscan_out || true
+
+    - name: Post or print comment
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        DRY_RUN: ${{ inputs.dry-run }}
+      run: |
+        COMMENT_FILE="/tmp/originscan_out/report.md"
+        if [ ! -f "$COMMENT_FILE" ]; then
+          echo "No markdown report generated."
+          exit 0
+        fi
+
+        if [ "$DRY_RUN" = "true" ]; then
+          echo "--- Dry run: comment body ---"
+          cat "$COMMENT_FILE"
+          exit 0
+        fi
+
+        # Update or create comment using the hidden marker
+        MARKER="<!-- originscan -->"
+        PR_NUMBER="${{ github.event.pull_request.number }}"
+        REPO="${{ github.repository }}"
+
+        # Find existing comment
+        COMMENT_ID=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" \
+          --jq ".[] | select(.body | contains(\"$MARKER\")) | .id" \
+          2>/dev/null | head -1)
+
+        BODY=$(cat "$COMMENT_FILE")
+        if [ -n "$COMMENT_ID" ]; then
+          gh api "repos/$REPO/issues/comments/$COMMENT_ID" \
+            -X PATCH -f body="$BODY"
+          echo "Updated existing comment $COMMENT_ID"
+        else
+          gh api "repos/$REPO/issues/$PR_NUMBER/comments" \
+            -f body="$BODY"
+          echo "Posted new comment"
+        fi

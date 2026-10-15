@@ -293,3 +293,122 @@ def compute_token_stats(result: RunResult) -> dict[str, dict[str, float]]:
         }
 
     return stats
+
+
+# ---------------------------------------------------------------------------
+# Escalation loop (PRD task 6.7)
+# ---------------------------------------------------------------------------
+
+_LEVEL_ORDER: list[Level] = ["L1", "L2", "L3"]
+
+
+def _next_level(current: Level) -> Level | None:
+    """Get the next level up, or None if already at max."""
+    idx = _LEVEL_ORDER.index(current)
+    if idx + 1 < len(_LEVEL_ORDER):
+        return _LEVEL_ORDER[idx + 1]
+    return None
+
+
+def escalate_scan(
+    slot_id: str,
+    origin: Origin,
+    detector: DetectorAdapter,
+    counter: TokenCounter,
+    resolver: SlotResolver | None = None,
+    graph: CallGraph | None = None,
+    index: RepoIndex | None = None,
+    policy: dict[str, Level] | None = None,
+    caps: dict[str, int] | None = None,
+    tau: float = 0.7,
+    max_level: Level = "L3",
+    budget: int = 50000,
+) -> list[SlotResult]:
+    """Run detection with escalation.
+
+    Starts at the policy-chosen level. If confidence < tau, escalates
+    to the next level. Stops when confidence >= tau, max_level reached,
+    or total tokens exceed budget.
+
+    Args:
+        slot_id: Function identifier.
+        origin: Code provenance label.
+        detector: Detector adapter.
+        counter: Token counter.
+        resolver: SlotResolver for build_context.
+        graph: CallGraph for L3.
+        index: RepoIndex for L3.
+        policy: Policy dict for choose_start.
+        caps: Token cap overrides per level.
+        tau: Confidence threshold for escalation.
+        max_level: Maximum level to escalate to.
+        budget: Total token budget.
+
+    Returns:
+        List of SlotResults from each escalation step.
+    """
+    start = choose_start(origin, policy=policy)
+    current_level: Level = start
+    results: list[SlotResult] = []
+    total_tokens = 0
+    max_idx = _LEVEL_ORDER.index(max_level)
+
+    while True:
+        t0 = time.perf_counter()
+        ctx = build_context(
+            slot_id, current_level,
+            resolver=resolver,
+            counter=counter,
+            caps=caps,
+            graph=graph,
+            index=index,
+        )
+        build_ms = (time.perf_counter() - t0) * 1000
+
+        t1 = time.perf_counter()
+        finding = detector.run(ctx, run=len(results) + 1)
+        detect_ms = (time.perf_counter() - t1) * 1000
+
+        sr = SlotResult(
+            slot_id=slot_id,
+            level=current_level,
+            origin=origin,
+            finding=finding,
+            context_tokens=ctx["tokens"],
+            context_items=ctx["items"],
+            build_time_ms=round(build_ms, 2),
+            detect_time_ms=round(detect_ms, 2),
+        )
+        results.append(sr)
+        total_tokens += finding["input_tokens"]
+
+        # Check stop conditions
+        if finding["confidence"] >= tau:
+            logger.info(
+                "%s@%s: confidence %.2f >= tau %.2f, stopping",
+                slot_id, current_level, finding["confidence"], tau,
+            )
+            break
+
+        next_lvl = _next_level(current_level)
+        if next_lvl is None or _LEVEL_ORDER.index(next_lvl) > max_idx:
+            logger.info(
+                "%s@%s: max level reached, stopping",
+                slot_id, current_level,
+            )
+            break
+
+        if total_tokens + (caps or {}).get(next_lvl, 15000) > budget:
+            logger.info(
+                "%s: budget %d would be exceeded, stopping",
+                slot_id, budget,
+            )
+            break
+
+        current_level = next_lvl
+        logger.info(
+            "%s: escalating to %s (confidence %.2f < tau %.2f)",
+            slot_id, current_level, finding["confidence"], tau,
+        )
+
+    return results
