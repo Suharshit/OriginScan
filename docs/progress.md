@@ -106,3 +106,34 @@
 - `originscan scan --diff file.diff` parses diff, indexes repo, maps to functions, runs detection
 - Provenance reader detects: bot[bot] authors, Co-authored-by trailers, Generated-by trailers
 - MockGit enables fully offline provenance tests
+
+## Phase 7: Reports, GitHub Action, Policy (Weeks 11-12)
+
+- [x] 7.1 Internal result model shared by both report formats (RunResult)
+- [x] 7.2 `report/json_report.py`: RunResult -> JSON with schema
+- [x] 7.3 `report/markdown_report.py`: summary table, hidden `<!-- originscan -->` marker, disclaimer
+- [x] 7.4 `policy.py`: load policy.yaml, CWE-family overrides, `choose_level(origin, cwe_family)`
+- [x] 7.5 Per-PR token budget cap in escalation loop
+- [x] 7.7 `action/action.yml`: composite GitHub Action with comment posting
+- [x] 7.8 Example workflow in `docs/action-usage.md`
+- [x] 7.10 Dry-run mode prints comment body instead of posting
+- [x] 6.7 Escalation loop: start level -> detect -> escalate if confidence < tau
+
+### Notes
+- 221 tests passing, ruff clean
+- Policy supports CWE-family overrides (e.g. CWE-787 -> ai:L3)
+- Escalation stops at: confidence >= tau, max_level, or budget exceeded
+
+## Phase 8: Docs, Paper Sections, Demo (Weeks 13-14) — FINAL
+
+- [x] 8.1 README: install, quick start, CLI reference, Action setup, config files
+- [x] 8.2 `docs/limitations.md`: call graph, preprocessor, tokens, provenance, prototype
+- [x] 8.3 Paper sections: `paper-context-section.md` and `paper-tool-section.md`
+- [x] 8.8 Final cleanup: dependencies pinned, README comprehensive, dead code removed
+
+### Notes
+- 221 tests passing across 9 test modules, ruff clean
+- All 8 phases complete
+- Full documentation: context-design, using-build-context, callgraph-limits, limitations, action-usage
+- Paper drafts ready for P1 integration
+- Dependencies pinned in pyproject.toml

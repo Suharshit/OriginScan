@@ -4,7 +4,7 @@
 
 OriginScan studies whether knowing who wrote code (human or AI) should change how much surrounding context a vulnerability detector reads, and ships a pull-request scanner that applies the answer. One Python codebase serves both the research study and the tool.
 
-**Status:** Phase 2 complete — Parser & Token Counter ✅
+**Status:** All 8 phases complete — 221 tests passing, ruff clean ✅
 
 ---
 
@@ -17,19 +17,35 @@ pip install -e ".[dev]"
 # Run tests
 pytest tests/ -v
 
-# Type check
-mypy src/originscan/interfaces.py src/originscan/config.py
-
 # Lint
 ruff check src/ tests/
 
-# Run the tree-sitter spike (built-in sample or provide a C file)
-python scripts/spike_treesitter.py
-python scripts/spike_treesitter.py path/to/some/file.c
+# Build a repo index
+originscan index --repo path/to/repo
 
-# CLI (stub — commands wired up in later phases)
-originscan --help
+# Print context for a function
+originscan context --function "func_name@path/to/file.c" --level L2
+
+# Scan a diff
+originscan scan --diff changes.diff --repo path/to/repo
 ```
+
+## CLI Reference
+
+```
+originscan scan    --repo PATH --diff FILE [--policy policy.yaml] [--budget N]
+                   [--format json,md] [--fail-on-findings] [--out DIR]
+
+originscan context --function FUNC_ID --level L1|L2|L3 [--repo PATH]
+
+originscan index   [--repo PATH]
+```
+
+| Command | Description |
+|---|---|
+| `scan` | Parse a diff, index the repo, map hunks to functions, detect vulnerabilities, produce reports |
+| `context` | Print the assembled context for a function at a given level |
+| `index` | Build or refresh the repo-wide symbol index |
 
 ## How It Works
 
@@ -42,7 +58,7 @@ C/C++ Source ──► Tree-sitter Parser ──► Repo Index & Call Graph
 Git History ──► Provenance Reader ──►  ai / human / unknown
                                               │
                                               ▼
-                                     CLI: originscan scan
+                                    Policy + Escalation Loop
                                               │
                                               ▼
                                   JSON + Markdown Reports
@@ -53,11 +69,67 @@ Git History ──► Provenance Reader ──►  ai / human / unknown
 
 ### Context Levels
 
-| Level | Contents | Approx. Tokens |
+| Level | Contents | Default Cap |
 |---|---|---|
-| **L1** | Target function only | ~1.5k |
-| **L2** | L1 + same-file types, macros, globals, helpers | ~5k |
-| **L3** | L2 + 1-2 hop callers/callees across files | ~12k |
+| **L1** | Target function only | 2,000 tokens |
+| **L2** | L1 + same-file types, macros, globals, helpers (priority-ordered) | 6,000 tokens |
+| **L3** | L2 + cross-file callers/callees (1-2 hops, ambiguity-aware) | 15,000 tokens |
+
+### Provenance Detection
+
+| Signal | Example | Result |
+|---|---|---|
+| `Co-authored-by` trailer | `Co-authored-by: copilot[bot] <...>` | `ai` |
+| Bot author pattern | `dependabot[bot]` | `ai` |
+| AI tool trailer | `Generated-by: GitHub Copilot` | `ai` |
+| Configured agent identity | From `config/agents.yaml` | `ai` |
+| No AI signals | Regular human commits | `human` |
+| No metadata (squash) | Squashed commit, no trailers | `unknown` → L1 |
+
+### Escalation Loop
+
+```
+Start Level (from policy) → Detect → confidence < tau?
+    ├── Yes → Escalate to next level (if budget allows)
+    └── No  → Report finding
+```
+
+## GitHub Action
+
+Add to `.github/workflows/originscan.yml`:
+
+```yaml
+name: OriginScan PR Scan
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: ./action
+        with:
+          fail-on-findings: 'false'
+```
+
+See [`docs/action-usage.md`](docs/action-usage.md) for full configuration.
+
+## Configuration
+
+| File | Purpose |
+|---|---|
+| `config/context.yaml` | Token caps, per-item limits, hops, ignore globs |
+| `config/agents.yaml` | Known AI agent names/emails for provenance |
+| `policy.yaml` | Level selection rules per origin and CWE family |
 
 ## Project Structure
 
@@ -70,40 +142,48 @@ originscan/
 ├── src/originscan/
 │   ├── interfaces.py            # Frozen types: Context, Finding, Level, Origin
 │   ├── config.py                # YAML config loader with deterministic hashing
+│   ├── policy.py                # Policy loader: levels, escalation, CWE overrides
+│   ├── detectors.py             # FakeDetector + DetectorAdapter protocol
+│   ├── runner.py                # Run orchestrator, choose_start, escalation loop
 │   ├── context/
 │   │   ├── parser.py            # C/C++ symbol extraction via tree-sitter
 │   │   ├── tokens.py            # Pluggable token counter (tiktoken / whitespace)
-│   │   ├── index.py             # Repo-wide symbol index (Phase 4)
-│   │   ├── callgraph.py         # Approximate call graph (Phase 4)
-│   │   ├── builders.py          # L1/L2/L3 context assembly (Phase 3)
-│   │   └── diff.py              # Diff → changed functions (Phase 6)
+│   │   ├── builders.py          # L1/L2/L3 context assembly with hard token caps
+│   │   ├── index.py             # Repo-wide symbol index with commit-keyed cache
+│   │   ├── callgraph.py         # Approximate call graph with ambiguity rule
+│   │   └── diff.py              # Unified diff parser → changed functions
 │   ├── provenance/
-│   │   ├── reader.py            # ai/human/unknown labelling (Phase 6)
-│   │   └── git.py               # Thin git wrapper (Phase 6)
+│   │   ├── git.py               # Mockable git wrapper (SubprocessGit + MockGit)
+│   │   └── reader.py            # Provenance detection: ai/human/unknown
 │   ├── cli/
 │   │   └── main.py              # Typer CLI: scan, context, index
 │   └── report/
-│       ├── json_report.py       # JSON report (Phase 7)
-│       └── markdown_report.py   # Markdown PR comment (Phase 7)
-├── action/                      # GitHub Action (Phase 7)
-├── scripts/
-│   └── spike_treesitter.py      # Phase 1 tree-sitter validation spike
-├── tests/
-│   ├── fixtures/                # C/C++ test files
-│   │   ├── simple.c             # Functions, structs, enums, macros, globals
-│   │   ├── cpp_class.cpp        # C++ class, namespaces, qualified methods
-│   │   ├── syntax_error.c       # Error tolerance testing
-│   │   ├── ifdef_macros.c       # Preprocessor-heavy code
-│   │   └── static_funcs.c       # All-static functions and globals
+│       ├── json_report.py       # RunResult → JSON report
+│       └── markdown_report.py   # RunResult → Markdown PR comment
+├── action/
+│   └── action.yml               # GitHub Action composite action
+├── tests/                       # 221 tests across 8 test modules
+│   ├── fixtures/                # C/C++ test files + multi-file repo
 │   ├── test_interfaces.py
 │   ├── test_config.py
 │   ├── test_parser.py
-│   └── test_tokens.py
+│   ├── test_tokens.py
+│   ├── test_builders.py
+│   ├── test_index_callgraph.py
+│   ├── test_runner.py
+│   ├── test_phase6.py
+│   └── test_phase7.py
 ├── docs/
-│   ├── context-design.md        # L1/L2/L3 design (Gate 1 deliverable)
-│   ├── interface-changes.md     # Change log for frozen interfaces
+│   ├── context-design.md        # L1/L2/L3 design rationale
+│   ├── using-build-context.md   # Usage guide for P5
+│   ├── callgraph-limits.md      # Call graph known limitations
+│   ├── limitations.md           # Full limitations document
+│   ├── action-usage.md          # GitHub Action setup guide
+│   ├── paper-context-section.md # Paper: Methods context section draft
+│   ├── paper-tool-section.md    # Paper: OriginScan tool section draft
+│   ├── interface-changes.md     # Frozen interface change log
 │   └── progress.md              # Phase completion tracking
-└── .github/workflows/ci.yml     # pytest + mypy + ruff on every PR
+└── .github/workflows/ci.yml    # pytest + ruff on every PR
 ```
 
 ## Tech Stack
@@ -114,20 +194,39 @@ originscan/
 | Parsing | tree-sitter 0.24.0, tree-sitter-c 0.23.2, tree-sitter-cpp 0.23.2 |
 | Tokens | tiktoken (cl100k_base, pluggable) |
 | CLI | Typer |
-| CI | GitHub Actions (pytest, mypy, ruff) |
+| Config | PyYAML |
+| CI | GitHub Actions (pytest, ruff) |
 
 ## Development
 
 ```bash
 # Run the full check suite
 ruff check src/ tests/
-mypy src/originscan/interfaces.py src/originscan/config.py
 pytest tests/ -v --tb=short
+
+# Run a specific test module
+pytest tests/test_builders.py -v
+
+# Lint and fix
+ruff check --fix src/ tests/
 ```
+
+## Documentation
+
+| Document | Description |
+|---|---|
+| [`context-design.md`](docs/context-design.md) | L1/L2/L3 design, priority ordering, truncation rules |
+| [`using-build-context.md`](docs/using-build-context.md) | How P5 calls `build_context` |
+| [`callgraph-limits.md`](docs/callgraph-limits.md) | Known call graph limitations |
+| [`limitations.md`](docs/limitations.md) | Full limitations of the research prototype |
+| [`action-usage.md`](docs/action-usage.md) | GitHub Action setup and configuration |
+| [`progress.md`](docs/progress.md) | Phase-by-phase completion tracking |
 
 ## Research Prototype
 
-This is a research prototype for the OriginScan study. It scans only repositories the team owns or forks. See `.agent/prd.md` for the full specification.
+This is a research prototype for the OriginScan study. It scans only
+repositories the team owns or forks.
+See `.agent/prd.md` for the full specification.
 
 ## License
 
