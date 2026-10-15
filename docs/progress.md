@@ -88,3 +88,21 @@
 - Multiple runs per slot supported (runs_per_slot=N)
 - Token cap invariant holds across all levels and fixtures
 - Error in one slot does not crash the entire experiment run
+
+## Phase 6: Diff, Provenance, CLI Skeleton (Weeks 8-10)
+
+- [x] 6.1 `context/diff.py`: parse unified diffs, map hunks to functions (modified/added/near_change)
+- [x] 6.2 `provenance/git.py`: mockable git wrapper (SubprocessGit + MockGit), CommitInfo with trailers
+- [x] 6.3 `provenance/reader.py`: Co-authored-by trailers, bot authors, AI tool metadata, agents.yaml support
+- [x] 6.4 Tests with synthetic git data: trailer, bot author, human, squash with no metadata, mixed signals
+- [x] 6.5 `cli/main.py` fully wired: `scan`, `context`, `index` commands (design.md §8)
+- [x] 6.6 `DetectorAdapter` protocol and `FakeDetector` (completed in Phase 5)
+- [x] 6.8 CLI tests with CliRunner; exit codes 0/1/2
+
+### Notes
+- 196 tests passing, ruff clean
+- `originscan context --function func@file.c --level L1` works end to end
+- `originscan index --repo path` indexes and reports symbol count
+- `originscan scan --diff file.diff` parses diff, indexes repo, maps to functions, runs detection
+- Provenance reader detects: bot[bot] authors, Co-authored-by trailers, Generated-by trailers
+- MockGit enables fully offline provenance tests
