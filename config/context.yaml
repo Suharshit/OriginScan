@@ -1,0 +1,31 @@
+# OriginScan — Context Builder Configuration
+# Owner: P4 (consulted with P5)
+#
+# Token caps per context level. These are HARD limits — output must never
+# exceed them. Planning averages from the overview (1.5k/5k/12k) are
+# *averages*, not caps. Actual caps are set after the Week 1 pilot.
+#
+# See design.md §5 for the cap invariant and priority rules.
+
+token_caps:
+  L1: 2000    # TBD — confirm with P5 after pilot
+  L2: 6000    # TBD — confirm with P5 after pilot
+  L3: 15000   # TBD — confirm with P5 after pilot
+
+# Maximum tokens for a single included item (callee body, caller window, etc.)
+per_item_limit: 1500
+
+# Maximum call-graph hops for L3 context
+hops_max: 2
+
+# Tokenizer for counting (tiktoken encoding name)
+# Recorded in each run for reproducibility
+tokenizer: cl100k_base
+
+# Directory globs to skip when indexing a repo
+ignore_globs:
+  - "build/"
+  - "third_party/"
+  - "vendor/"
+  - ".git/"
+  - ".originscan/"

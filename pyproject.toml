@@ -1,0 +1,65 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "originscan"
+version = "0.1.0"
+description = "OriginScan P4: Context Builder & Tool — vulnerability scanner that adapts context depth based on code provenance."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [
+    { name = "OriginScan Team" },
+]
+
+dependencies = [
+    # Parsing — pin exact versions; tree-sitter Python bindings change API between releases
+    "tree-sitter==0.24.0",
+    "tree-sitter-c==0.23.2",
+    "tree-sitter-cpp==0.23.2",
+    # Token counting
+    "tiktoken>=0.7.0,<1.0",
+    # CLI
+    "typer[all]>=0.12.0,<1.0",
+    # Diff parsing
+    "unidiff>=0.7.5,<1.0",
+    # Config
+    "pyyaml>=6.0,<7.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0,<9.0",
+    "pytest-cov>=5.0,<6.0",
+    "mypy>=1.11,<2.0",
+    "ruff>=0.6.0,<1.0",
+    "types-PyYAML>=6.0",
+]
+
+[project.scripts]
+originscan = "originscan.cli.main:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/originscan"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.mypy]
+strict = true
+python_version = "3.11"
+mypy_path = "src"
+packages = ["originscan"]
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[tool.ruff]
+src = ["src"]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "SIM", "TCH"]

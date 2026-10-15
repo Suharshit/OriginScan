@@ -1,0 +1,85 @@
+# ==============================
+# Python
+# ==============================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+*.whl
+pip-wheel-metadata/
+*.manifest
+*.spec
+
+# ==============================
+# Virtual environments
+# ==============================
+.venv/
+venv/
+ENV/
+env/
+
+# ==============================
+# IDE / Editors
+# ==============================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# ==============================
+# Testing & Coverage
+# ==============================
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# ==============================
+# Type checking
+# ==============================
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# ==============================
+# Ruff
+# ==============================
+.ruff_cache/
+
+# ==============================
+# OriginScan runtime artifacts
+# ==============================
+.originscan/
+*.log
+
+# ==============================
+# OS files
+# ==============================
+.DS_Store
+Thumbs.db
+Desktop.ini
+ehthumbs.db
+
+# ==============================
+# Secrets — NEVER commit
+# ==============================
+.env
+.env.*
+!.env.example
+
+# ==============================
+# Misc
+# ==============================
+*.bak
+*.tmp
+*.temp

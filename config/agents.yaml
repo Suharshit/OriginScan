@@ -1,0 +1,43 @@
+# OriginScan — Known AI Agent Identities
+# Owner: P4
+#
+# Used by provenance/reader.py to label changed functions as "ai" origin.
+# Add entries here when new AI coding tools are encountered.
+# DO NOT hardcode agent identities in source code.
+
+# Git trailer keys to check for AI authorship signals
+trailer_keys:
+  - "Co-authored-by"
+  - "Generated-by"
+
+# Known AI agent accounts
+agents:
+  - name: "GitHub Copilot"
+    emails:
+      - "copilot@github.com"
+    trailer_keys: []
+
+  - name: "Dependabot"
+    emails:
+      - "dependabot[bot]@users.noreply.github.com"
+    trailer_keys: []
+
+  - name: "Renovate Bot"
+    emails:
+      - "renovate[bot]@users.noreply.github.com"
+    trailer_keys: []
+
+  - name: "Devin"
+    emails:
+      - "devin-ai-integration[bot]@users.noreply.github.com"
+    trailer_keys: []
+
+  - name: "Cursor"
+    emails: []
+    trailer_keys:
+      - "Generated-by"
+
+  - name: "Codeium"
+    emails:
+      - "codeium[bot]@users.noreply.github.com"
+    trailer_keys: []
