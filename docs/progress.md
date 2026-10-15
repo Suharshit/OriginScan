@@ -50,3 +50,22 @@
 - Adversarial test: 500-line function respects cap
 - Determinism verified: 5 identical runs produce identical output
 - P5 can call `build_context("func@file.c", "L1")` or `"L2"` now
+
+## Phase 4: Repo Index, Call Graph, and L3 (Weeks 4-6)
+
+- [x] 4.1 `context/index.py`: `RepoIndex.build(root, commit)` with ignore globs
+- [x] 4.2 Index cache keyed by commit hash (`.originscan/index-<commit>.json`)
+- [x] 4.3 `context/callgraph.py`: extract call identifiers, flag member calls
+- [x] 4.4 Name resolution with ambiguity rule (same file > same dir > anywhere)
+- [x] 4.5 `callers` and `callees` with hop depth (BFS) and deterministic order
+- [x] 4.6 `build_l3`: L2 + callees, callers, hop 2, ambiguous edges last with labels
+- [x] 4.7 Multi-file fixture repo (`tests/fixtures/multifile/`) with known edges
+- [x] 4.9 `docs/callgraph-limits.md`
+
+### Notes
+- 143 tests passing, ruff clean
+- Index: parses all files, relative paths, cache roundtrip verified
+- Call graph: resolves direct calls, static functions in same file, flags ambiguity
+- L3: includes cross-file callees/callers, respects cap at 100/500/1k/5k/15k
+- L3 falls back to L2 gracefully when no call graph is provided
+- Unresolved external calls (libc) correctly tracked but not included in context

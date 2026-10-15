@@ -12,13 +12,17 @@ See design.md §5.
 from __future__ import annotations
 
 import logging
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from originscan.context.parser import C_LANGUAGE, CPP_LANGUAGE, Symbol
 from originscan.context.tokens import TokenCounter, create_counter
 from originscan.interfaces import Context, Level
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from originscan.context.callgraph import CallGraph
+    from originscan.context.index import RepoIndex
 
 # ---------------------------------------------------------------------------
 # Reference detection (design.md §5: "identifier match on the tree")
@@ -381,6 +385,145 @@ def build_l2(
 
 
 # ---------------------------------------------------------------------------
+# L3 builder
+# ---------------------------------------------------------------------------
+
+
+def build_l3(
+    target: Symbol,
+    file_symbols: list[Symbol],
+    counter: TokenCounter,
+    cap: int,
+    per_item_limit: int = 1500,
+    graph: CallGraph | None = None,
+    index: RepoIndex | None = None,
+    hops_max: int = 2,
+) -> Context:
+    """Build L3 context: L2 + repo-slice callers/callees.
+
+    After L2 items (design.md §5):
+      1. Callees (hop 1) from other files: signature + body up to per_item_limit
+      2. Callers (hop 1): call-site function, trimmed to window around call
+      3. Types referenced by those callers/callees
+      4. Hop 2 callers/callees if budget remains
+      - Ambiguous edges included last and labelled ``// [ambiguous match]``
+    """
+    if graph is None or index is None:
+        # Fall back to L2 if no call graph available
+        logger.warning("L3 requested but no call graph; falling back to L2")
+        return build_l2(target, file_symbols, counter, cap, per_item_limit)
+
+    # Start with L2 content
+    l2_ctx = build_l2(target, file_symbols, counter, cap, per_item_limit)
+    assembled_text = l2_ctx["text"]
+    assembled_tokens = l2_ctx["tokens"]
+    items = list(l2_ctx["items"])
+
+    fn_id = graph.fn_id_for(target)
+
+    # Collect cross-file callees and callers
+    # Separate non-ambiguous (priority) from ambiguous (included last)
+    callee_edges = graph.callees(fn_id, hops=1)
+    caller_edges = graph.callers(fn_id, hops=1)
+
+    non_ambiguous_callees = [e for e in callee_edges if not e.ambiguous]
+    non_ambiguous_callers = [e for e in caller_edges if not e.ambiguous]
+    ambiguous_callees = [e for e in callee_edges if e.ambiguous]
+    ambiguous_callers = [e for e in caller_edges if e.ambiguous]
+
+    # Helper to add a cross-file symbol to the context
+    def _try_add_symbol(
+        sym: Symbol, label: str, is_ambiguous: bool = False
+    ) -> bool:
+        nonlocal assembled_text, assembled_tokens
+
+        # Skip if already included (same-file items from L2)
+        sym_item_id = _make_item_id(sym)
+        if sym_item_id in items:
+            return False
+
+        # Format the symbol
+        loc = f"{sym.file}:{sym.start_line}-{sym.end_line}"
+        ambig_tag = " [ambiguous match]" if is_ambiguous else ""
+
+        sym_tokens = counter.count(sym.text)
+        if sym_tokens > per_item_limit:
+            # Trim to signature only for large functions
+            sig_lines: list[str] = []
+            for line in sym.text.split("\n"):
+                sig_lines.append(line)
+                if "{" in line:
+                    break
+            sig = "\n".join(sig_lines).rstrip(" {").rstrip()
+            formatted = (
+                f"// === {label}: {sym.name} ({loc})"
+                f"{ambig_tag} [signature only] ===\n{sig};"
+            )
+        else:
+            formatted = f"// === {label}: {sym.name} ({loc}){ambig_tag} ===\n{sym.text}"
+
+        formatted_tokens = counter.count(formatted)
+        if assembled_tokens + formatted_tokens + 1 > cap:
+            return False
+
+        assembled_text = assembled_text + "\n" + formatted
+        assembled_tokens = counter.count(assembled_text)
+        items.append(sym_item_id)
+        return True
+
+    # 1. Non-ambiguous callees (hop 1)
+    for edge in non_ambiguous_callees:
+        sym = graph.get_symbol(edge.callee)
+        if sym and sym.file != target.file:
+            _try_add_symbol(sym, "CALLEE")
+
+    # 2. Non-ambiguous callers (hop 1)
+    for edge in non_ambiguous_callers:
+        sym = graph.get_symbol(edge.caller)
+        if sym and sym.file != target.file:
+            _try_add_symbol(sym, "CALLER")
+
+    # 3. Hop 2 if budget remains
+    if hops_max >= 2 and assembled_tokens < cap:
+        hop2_callees = graph.callees(fn_id, hops=2)
+        hop2_callers = graph.callers(fn_id, hops=2)
+
+        # Only include hop-2 edges not already seen in hop 1
+        hop1_ids = {e.callee for e in callee_edges} | {e.caller for e in caller_edges}
+
+        for edge in hop2_callees:
+            if edge.callee not in hop1_ids and not edge.ambiguous:
+                sym = graph.get_symbol(edge.callee)
+                if sym:
+                    _try_add_symbol(sym, "CALLEE (hop 2)")
+
+        for edge in hop2_callers:
+            if edge.caller not in hop1_ids and not edge.ambiguous:
+                sym = graph.get_symbol(edge.caller)
+                if sym:
+                    _try_add_symbol(sym, "CALLER (hop 2)")
+
+    # 4. Ambiguous edges last
+    for edge in ambiguous_callees:
+        sym = graph.get_symbol(edge.callee)
+        if sym and sym.file != target.file:
+            _try_add_symbol(sym, "CALLEE", is_ambiguous=True)
+
+    for edge in ambiguous_callers:
+        sym = graph.get_symbol(edge.caller)
+        if sym and sym.file != target.file:
+            _try_add_symbol(sym, "CALLER", is_ambiguous=True)
+
+    final_tokens = counter.count(assembled_text)
+
+    return Context(
+        text=assembled_text,
+        tokens=final_tokens,
+        items=items,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Top-level build_context
 # ---------------------------------------------------------------------------
 
@@ -393,6 +536,9 @@ def build_context(
     cap: int | None = None,
     per_item_limit: int = 1500,
     caps: dict[str, int] | None = None,
+    graph: CallGraph | None = None,
+    index: RepoIndex | None = None,
+    hops_max: int = 2,
 ) -> Context:
     """Build detector-ready context for a function at a given level.
 
@@ -408,12 +554,12 @@ def build_context(
         cap: Override the token cap for this call.
         per_item_limit: Max tokens per individual included item (L2+).
         caps: Dict of level -> cap overrides (e.g. from config).
+        graph: CallGraph for L3 (optional; L3 falls back to L2 without it).
+        index: RepoIndex for L3 (optional).
+        hops_max: Max call-graph hops for L3.
 
     Returns:
         Context with text, token count, and included items list.
-
-    Raises:
-        NotImplementedError: If level is ``"L3"`` (Phase 4).
     """
     if resolver is None:
         resolver = PathResolver()
@@ -434,6 +580,10 @@ def build_context(
     elif level == "L2":
         return build_l2(target, file_symbols, counter, effective_cap, per_item_limit)
     elif level == "L3":
-        raise NotImplementedError("L3 context builder is in Phase 4")
+        return build_l3(
+            target, file_symbols, counter, effective_cap, per_item_limit,
+            graph=graph, index=index, hops_max=hops_max,
+        )
     else:
         raise ValueError(f"Unknown level: {level!r}")
+

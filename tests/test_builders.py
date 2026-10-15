@@ -354,12 +354,14 @@ class TestBuildContext:
         assert "process_record" in ctx["text"]
         assert ctx["tokens"] <= 6000  # default cap
 
-    def test_l3_raises_not_implemented(self) -> None:
-        with pytest.raises(NotImplementedError, match="Phase 4"):
-            build_context(
-                f"process_record@{FIXTURES / 'simple.c'}",
-                "L3",
-            )
+    def test_l3_without_graph_falls_back(self) -> None:
+        """L3 without a graph falls back to L2."""
+        ctx = build_context(
+            f"process_record@{FIXTURES / 'simple.c'}",
+            "L3",
+        )
+        assert ctx["tokens"] > 0
+        assert ctx["tokens"] <= 15000
 
     def test_custom_cap(self) -> None:
         ctx = build_context(
