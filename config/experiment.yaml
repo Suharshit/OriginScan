@@ -1,0 +1,46 @@
+# OriginScan — Experiment Configuration
+# Owner: P5 (Experiments lead)
+#
+# Every value used by exp/run.py, exp/simulate.py and analysis/ lives here.
+# Log every change, with its reason, in docs/decisions.md.
+# null = not decided yet; the comment names the phase that sets it.
+
+paths:
+  slots: data/slots.csv
+  labels: data/labels.csv
+  split: data/split.csv
+  grid_dir: data/grid
+  cache_dir: data/cache
+
+# Dev/test split rule: a repo is dev if hash(repo name) mod 5 == 0 (~20%)
+split:
+  modulus: 5
+  dev_remainder: 0
+
+# Token caps passed to build_context(caps=...). Do not edit config/context.yaml.
+# Rule: ~95th percentile of measured sizes (Phase 2 token pilot).
+# Starting values are P4's defaults until the pilot runs.
+caps:
+  L1: 2000
+  L2: 6000
+  L3: 15000
+tokenizer: cl100k_base   # estimate only; re-count per model in Phase 2
+
+# Models: exact IDs and the date chosen (Phase 3)
+detectors:
+  cheap: null      # {provider, model_id, chosen_on}
+  strong: null     # different family from cheap
+generators: []     # 2–3 entries: {provider, model_id, chosen_on}
+temperature:
+  detector: null
+  generator: null
+
+runs_per_call: 3   # k, for 3-run agreement confidence
+
+# Tuned on dev only (Phase 6) — must be committed before any test-split run
+tau: null          # agreement threshold for escalation
+lambda: null       # cost weight: accuracy - lambda * (tokens / tokens_L3)
+p_origin_start: {} # origin -> start level, learned on dev
+
+# Budget (Phase 2)
+money_cap_usd: null

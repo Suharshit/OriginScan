@@ -63,6 +63,11 @@ dmypy.json
 *.log
 
 # ==============================
+# P5 experiment data (slots, labels, split, grid, response cache)
+# ==============================
+data/
+
+# ==============================
 # OS files
 # ==============================
 .DS_Store
@@ -83,3 +88,7 @@ ehthumbs.db
 *.bak
 *.tmp
 *.temp
+
+
+# Docs
+P5-docs
