@@ -16,8 +16,7 @@ import sys
 from pathlib import Path
 
 import tree_sitter_c as tsc
-from tree_sitter import Language, Parser, Node
-
+from tree_sitter import Language, Node, Parser
 
 # ---------------------------------------------------------------------------
 # Setup
@@ -282,7 +281,7 @@ def main() -> None:
             if clean_name in caller_map:
                 caller_map[clean_name].append(caller)
 
-    for name, node in func_nodes:
+    for name, _node in func_nodes:
         calls = callee_map.get(name, [])
         callers = caller_map.get(name, [])
         print(f"\n  {name}:")
