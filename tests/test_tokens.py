@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from originscan.context.tokens import (
     TiktokenCounter,
     TokenCounter,
@@ -15,7 +17,8 @@ from originscan.context.tokens import (
 
 
 class TestProtocol:
-    def test_tiktoken_is_token_counter(self) -> None:
+    @pytest.mark.requires_tiktoken
+    def test_tiktoken_is_token_counter(self, use_tiktoken: None) -> None:
         counter = TiktokenCounter()
         assert isinstance(counter, TokenCounter)
 
@@ -29,37 +32,38 @@ class TestProtocol:
 # -----------------------------------------------------------------------
 
 
+@pytest.mark.requires_tiktoken
 class TestTiktokenCounter:
-    def test_empty_string(self) -> None:
+    def test_empty_string(self, use_tiktoken: None) -> None:
         counter = TiktokenCounter()
         assert counter.count("") == 0
 
-    def test_single_word(self) -> None:
+    def test_single_word(self, use_tiktoken: None) -> None:
         counter = TiktokenCounter()
         result = counter.count("hello")
         assert result >= 1
 
-    def test_code_snippet(self) -> None:
+    def test_code_snippet(self, use_tiktoken: None) -> None:
         counter = TiktokenCounter()
         code = "int main() { return 0; }"
         result = counter.count(code)
         assert result > 0
 
-    def test_name(self) -> None:
+    def test_name(self, use_tiktoken: None) -> None:
         counter = TiktokenCounter()
         assert counter.name == "tiktoken:cl100k_base"
 
-    def test_custom_encoding(self) -> None:
+    def test_custom_encoding(self, use_tiktoken: None) -> None:
         counter = TiktokenCounter("o200k_base")
         assert "o200k_base" in counter.name
         assert counter.count("hello world") > 0
 
-    def test_deterministic(self) -> None:
+    def test_deterministic(self, use_tiktoken: None) -> None:
         counter = TiktokenCounter()
         text = "void foo(int x) { return x + 1; }"
         assert counter.count(text) == counter.count(text)
 
-    def test_longer_text_more_tokens(self) -> None:
+    def test_longer_text_more_tokens(self, use_tiktoken: None) -> None:
         counter = TiktokenCounter()
         short = "int x;"
         long = "int x; int y; int z; double w; float f; char c;"
@@ -100,7 +104,8 @@ class TestWhitespaceCounter:
 
 
 class TestCreateCounter:
-    def test_default_is_tiktoken(self) -> None:
+    @pytest.mark.requires_tiktoken
+    def test_default_is_tiktoken(self, use_tiktoken: None) -> None:
         counter = create_counter()
         assert isinstance(counter, TiktokenCounter)
 
@@ -108,7 +113,14 @@ class TestCreateCounter:
         counter = create_counter("whitespace")
         assert isinstance(counter, WhitespaceCounter)
 
-    def test_custom_encoding(self) -> None:
+    @pytest.mark.requires_tiktoken
+    def test_custom_encoding(self, use_tiktoken: None) -> None:
         counter = create_counter("o200k_base")
         assert isinstance(counter, TiktokenCounter)
         assert "o200k_base" in counter.name
+
+    def test_env_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """ORIGINSCAN_TOKENIZER env var overrides the name argument."""
+        monkeypatch.setenv("ORIGINSCAN_TOKENIZER", "whitespace")
+        counter = create_counter("cl100k_base")
+        assert isinstance(counter, WhitespaceCounter)

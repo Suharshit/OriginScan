@@ -5,7 +5,7 @@
 - [x] 1.1 Package skeleton created (`src/originscan/` with all subpackages)
 - [x] 1.2 `interfaces.py` with `Level`, `Origin`, `Context`, `Finding`, protocols, stubs
 - [x] 1.3 Config loader for `config/context.yaml` and `config/agents.yaml`
-- [x] 1.4 CI workflow (pytest, mypy, ruff)
+- [x] 1.4 CI workflow (pytest, ruff, mypy on interfaces.py + config.py)
 - [x] 1.5 tree-sitter packages pinned in `pyproject.toml`
 - [x] 1.6 Spike script: `scripts/spike_treesitter.py`
 - [ ] 1.7 Day 5: review interfaces with P2 and P5
@@ -95,7 +95,8 @@
 - [x] 6.2 `provenance/git.py`: mockable git wrapper (SubprocessGit + MockGit), CommitInfo with trailers
 - [x] 6.3 `provenance/reader.py`: Co-authored-by trailers, bot authors, AI tool metadata, agents.yaml support
 - [x] 6.4 Tests with synthetic git data: trailer, bot author, human, squash with no metadata, mixed signals
-- [x] 6.5 `cli/main.py` fully wired: `scan`, `context`, `index` commands (design.md §8)
+- [x] 6.5 `cli/main.py` wired: `scan`, `context`, `index` commands — scan now uses provenance,
+  policy, escalation, and report generation end-to-end (rewired in Issue 1-4 fixes)
 - [x] 6.6 `DetectorAdapter` protocol and `FakeDetector` (completed in Phase 5)
 - [x] 6.8 CLI tests with CliRunner; exit codes 0/1/2
 
@@ -132,8 +133,36 @@
 - [x] 8.8 Final cleanup: dependencies pinned, README comprehensive, dead code removed
 
 ### Notes
-- 221 tests passing across 9 test modules, ruff clean
-- All 8 phases complete
+- 253 tests passing across 12 test modules, ruff clean
+- All phases complete; scan command verified end-to-end
 - Full documentation: context-design, using-build-context, callgraph-limits, limitations, action-usage
 - Paper drafts ready for P1 integration
 - Dependencies pinned in pyproject.toml
+
+## Verified End-to-End (Post-Phase Fixes)
+
+The following was verified after fixing Issues 1-5:
+
+**`originscan scan` now does, per changed function:**
+1. Detects origin via `SubprocessGit` → `detect_origin()` (falls back to `unknown` on error)
+2. Chooses start level via `PolicyConfig.choose_level(origin)` (loaded or default policy)
+3. Runs `escalate_scan()` with tau/max_level/budget from policy (`--budget` overrides)
+4. Collects results into `RunResult`
+5. Writes `report.json` and/or `report.md` to `--out` dir (default `originscan_out/`)
+
+**CLI flags verified:**
+- `--diff`: accepts file paths AND git ranges (e.g. `origin/main...HEAD`)
+- `--policy`: loads via `load_policy`; missing file → exit 2
+- `--budget`: positive int; overrides policy budget
+- `--format`: json, md, or json,md; rejects unknown formats with exit 2
+- `--out`: creates directory if needed; writes reports there
+- `--fail-on-findings`: exit 1 when findings detected
+
+**GitHub Action verified:**
+- Installs OriginScan (not the scanned repo) via `${{ github.action_path }}/..`
+- Captures exit code properly (no `|| true`)
+- Always posts comment before exiting
+- Exit 2 always propagated; exit 1 only with `--fail-on-findings`
+
+**CI:** Runs pytest + ruff on every PR. mypy runs on `interfaces.py` and `config.py` only
+(not the full codebase — running mypy --strict on all modules would require additional work).

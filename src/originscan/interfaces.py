@@ -16,7 +16,12 @@ from typing import Literal, Protocol, TypedDict, runtime_checkable
 # ---------------------------------------------------------------------------
 
 Level = Literal["L1", "L2", "L3"]
-"""Context depth: L1 (function), L2 (file), L3 (repo slice)."""
+"""Context depth.
+
+L1: target function only.
+L2: L1 + same-file types, macros, globals, and helpers (priority-ordered).
+L3: L2 + cross-file callers and callees (1-2 hops, ambiguity-aware).
+"""
 
 Origin = Literal["ai", "human", "unknown"]
 """Code provenance label derived from git metadata."""

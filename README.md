@@ -4,7 +4,7 @@
 
 OriginScan studies whether knowing who wrote code (human or AI) should change how much surrounding context a vulnerability detector reads, and ships a pull-request scanner that applies the answer. One Python codebase serves both the research study and the tool.
 
-**Status:** All 8 phases complete — 221 tests passing, ruff clean ✅
+**Status:** All phases complete — 253 tests passing, ruff clean ✅
 
 ---
 
@@ -26,14 +26,17 @@ originscan index --repo path/to/repo
 # Print context for a function
 originscan context --function "func_name@path/to/file.c" --level L2
 
-# Scan a diff
+# Scan a diff file
 originscan scan --diff changes.diff --repo path/to/repo
+
+# Scan a git range
+originscan scan --diff "origin/main...HEAD" --repo path/to/repo
 ```
 
 ## CLI Reference
 
 ```
-originscan scan    --repo PATH --diff FILE [--policy policy.yaml] [--budget N]
+originscan scan    --repo PATH --diff FILE_OR_RANGE [--policy policy.yaml] [--budget N]
                    [--format json,md] [--fail-on-findings] [--out DIR]
 
 originscan context --function FUNC_ID --level L1|L2|L3 [--repo PATH]
@@ -43,7 +46,7 @@ originscan index   [--repo PATH]
 
 | Command | Description |
 |---|---|
-| `scan` | Parse a diff, index the repo, map hunks to functions, detect vulnerabilities, produce reports |
+| `scan` | Parse a diff (file or git range), detect provenance, choose start level via policy, run detection with escalation, produce reports |
 | `context` | Print the assembled context for a function at a given level |
 | `index` | Build or refresh the repo-wide symbol index |
 

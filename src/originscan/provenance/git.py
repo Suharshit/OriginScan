@@ -139,6 +139,43 @@ class SubprocessGit:
         return commits
 
 
+class GitDiffError(Exception):
+    """Raised when ``git diff`` fails (invalid range or non-git repo)."""
+
+
+def git_diff_range(repo_root: str, git_range: str) -> str:
+    """Run ``git diff <range>`` and return the unified diff text.
+
+    Args:
+        repo_root: Path to the repository root.
+        git_range: A git range like ``origin/main...HEAD``.
+
+    Returns:
+        Unified diff text.
+
+    Raises:
+        GitDiffError: If the git command fails.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "diff", git_range],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return result.stdout
+    except subprocess.CalledProcessError as e:
+        stderr = e.stderr.strip() if e.stderr else "unknown error"
+        raise GitDiffError(
+            f"git diff failed for range '{git_range}': {stderr}"
+        ) from e
+    except FileNotFoundError:
+        raise GitDiffError(
+            "git is not installed or not on PATH"
+        ) from None
+
+
 # ---------------------------------------------------------------------------
 # Mock implementation for tests
 # ---------------------------------------------------------------------------

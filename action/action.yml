@@ -3,7 +3,7 @@ description: 'Scan pull requests for vulnerabilities with context-adaptive depth
 
 inputs:
   repo-path:
-    description: 'Path to the repository root'
+    description: 'Path to the repository root (the repo being scanned)'
     required: false
     default: '.'
   policy:
@@ -41,7 +41,10 @@ runs:
 
     - name: Install OriginScan
       shell: bash
-      run: pip install -e "${{ inputs.repo-path }}"
+      run: |
+        # Install OriginScan itself (action/ is inside the OriginScan repo,
+        # so the repo root is one level up from action/)
+        pip install -e "${{ github.action_path }}/.."
 
     - name: Generate diff
       shell: bash
@@ -53,6 +56,9 @@ runs:
 
     - name: Run OriginScan
       shell: bash
+      id: scan
+      env:
+        ORIGINSCAN_OUT: /tmp/originscan_out
       run: |
         ARGS="--repo ${{ inputs.repo-path }} --diff ${{ steps.diff.outputs.diff_file }}"
         if [ -n "${{ inputs.policy }}" ]; then
@@ -65,43 +71,66 @@ runs:
         if [ "${{ inputs.fail-on-findings }}" = "true" ]; then
           ARGS="$ARGS --fail-on-findings"
         fi
-        originscan scan $ARGS --out /tmp/originscan_out || true
+
+        # Run scan and capture exit code (do NOT use || true)
+        set +e
+        originscan scan $ARGS --out "$ORIGINSCAN_OUT"
+        SCAN_EXIT=$?
+        set -e
+
+        echo "scan_exit=$SCAN_EXIT" >> $GITHUB_OUTPUT
+        echo "out_dir=$ORIGINSCAN_OUT" >> $GITHUB_OUTPUT
 
     - name: Post or print comment
       shell: bash
       env:
         GITHUB_TOKEN: ${{ inputs.github-token }}
         DRY_RUN: ${{ inputs.dry-run }}
+        SCAN_EXIT: ${{ steps.scan.outputs.scan_exit }}
+        OUT_DIR: ${{ steps.scan.outputs.out_dir }}
       run: |
-        COMMENT_FILE="/tmp/originscan_out/report.md"
+        COMMENT_FILE="${OUT_DIR}/report.md"
+
         if [ ! -f "$COMMENT_FILE" ]; then
           echo "No markdown report generated."
-          exit 0
-        fi
-
-        if [ "$DRY_RUN" = "true" ]; then
-          echo "--- Dry run: comment body ---"
-          cat "$COMMENT_FILE"
-          exit 0
-        fi
-
-        # Update or create comment using the hidden marker
-        MARKER="<!-- originscan -->"
-        PR_NUMBER="${{ github.event.pull_request.number }}"
-        REPO="${{ github.repository }}"
-
-        # Find existing comment
-        COMMENT_ID=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" \
-          --jq ".[] | select(.body | contains(\"$MARKER\")) | .id" \
-          2>/dev/null | head -1)
-
-        BODY=$(cat "$COMMENT_FILE")
-        if [ -n "$COMMENT_ID" ]; then
-          gh api "repos/$REPO/issues/comments/$COMMENT_ID" \
-            -X PATCH -f body="$BODY"
-          echo "Updated existing comment $COMMENT_ID"
         else
-          gh api "repos/$REPO/issues/$PR_NUMBER/comments" \
-            -f body="$BODY"
-          echo "Posted new comment"
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "--- Dry run: comment body ---"
+            cat "$COMMENT_FILE"
+          else
+            # Update or create comment using the hidden marker
+            MARKER="<!-- originscan -->"
+            PR_NUMBER="${{ github.event.pull_request.number }}"
+            REPO="${{ github.repository }}"
+
+            # Find existing comment with our marker
+            COMMENT_ID=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" \
+              --jq ".[] | select(.body | contains(\"$MARKER\")) | .id" \
+              2>/dev/null | head -1)
+
+            BODY=$(cat "$COMMENT_FILE")
+            if [ -n "$COMMENT_ID" ]; then
+              gh api "repos/$REPO/issues/comments/$COMMENT_ID" \
+                -X PATCH -f body="$BODY"
+              echo "Updated existing comment $COMMENT_ID"
+            else
+              gh api "repos/$REPO/issues/$PR_NUMBER/comments" \
+                -f body="$BODY"
+              echo "Posted new comment"
+            fi
+          fi
         fi
+
+        # Exit with scan's exit code:
+        # - 0: no findings (or --fail-on-findings not set)
+        # - 1: findings found with --fail-on-findings
+        # - 2: usage/runtime error (always propagate)
+        if [ "$SCAN_EXIT" = "2" ]; then
+          echo "::error::OriginScan scan failed with exit code 2"
+          exit 2
+        fi
+        if [ "$SCAN_EXIT" = "1" ]; then
+          echo "::warning::OriginScan found findings (exit 1)"
+          exit 1
+        fi
+        exit 0
