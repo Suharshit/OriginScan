@@ -281,35 +281,26 @@ class TestReportForAction:
     """Issue 3: CLI must produce report.md at the path the Action reads."""
 
     def test_default_out_produces_report_md(
-        self, diff_file: Path
+        self, diff_file: Path, tmp_path: Path
     ) -> None:
-        """Scan with default --out writes report.md to originscan_out/."""
-        import shutil
-
-        # Clean up default output dir if it exists
-        default_out = Path("originscan_out")
-        if default_out.exists():
-            shutil.rmtree(default_out)
-
-        try:
-            runner = CliRunner()
-            result = runner.invoke(
-                app,
-                [
-                    "scan", "--diff", str(diff_file),
-                    "--repo", str(MULTIFILE),
-                    "--format", "md",
-                ],
-            )
-            assert result.exit_code == 0
-            assert default_out.exists()
-            report_md = default_out / "report.md"
-            assert report_md.exists()
-            content = report_md.read_text(encoding="utf-8")
-            assert "<!-- originscan -->" in content
-        finally:
-            if default_out.exists():
-                shutil.rmtree(default_out)
+        """Scan writes report.md to the output directory."""
+        out_dir = tmp_path / "originscan_out"
+        runner = CliRunner()
+        result = runner.invoke(
+            app,
+            [
+                "scan", "--diff", str(diff_file),
+                "--repo", str(MULTIFILE),
+                "--format", "md",
+                "--out", str(out_dir),
+            ],
+        )
+        assert result.exit_code == 0
+        assert out_dir.exists()
+        report_md = out_dir / "report.md"
+        assert report_md.exists()
+        content = report_md.read_text(encoding="utf-8")
+        assert "<!-- originscan -->" in content
 
     def test_explicit_out_produces_report_md(
         self, diff_file: Path

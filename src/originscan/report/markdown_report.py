@@ -71,16 +71,20 @@ def generate_markdown_report(result: RunResult) -> str:
             # Extract function name and file from slot_id
             if "@" in sr.slot_id:
                 func_name, file_path = sr.slot_id.split("@", 1)
+                # Show short name for cleaner reports
+                from pathlib import PurePosixPath
+
+                file_display = PurePosixPath(file_path).name
             else:
                 func_name = sr.slot_id
-                file_path = ""
+                file_display = ""
 
             verdict = ":x: Yes" if sr.finding["verdict"] else ":white_check_mark: No"
             cwe = sr.finding["cwe"] or "-"
             conf = f"{sr.finding['confidence']:.0%}"
 
             lines.append(
-                f"| `{func_name}` | `{file_path}` | {sr.level} "
+                f"| `{func_name}` | `{file_display}` | {sr.level} "
                 f"| {verdict} | {cwe} | {conf} | {sr.context_tokens} |"
             )
 

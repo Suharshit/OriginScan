@@ -22,8 +22,6 @@ dependencies = [
     "tiktoken>=0.7.0,<1.0",
     # CLI
     "typer[all]>=0.12.0,<1.0",
-    # Diff parsing
-    "unidiff>=0.7.5,<1.0",
     # Config
     "pyyaml>=6.0,<7.0",
 ]
