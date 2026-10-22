@@ -89,6 +89,10 @@ class WhitespaceCounter:
 def create_counter(name: str = "cl100k_base") -> TokenCounter:
     """Create a token counter by name.
 
+    If the environment variable ``ORIGINSCAN_TOKENIZER`` is set, it
+    overrides *name*.  This allows offline test runs to use
+    ``whitespace`` without changing production defaults.
+
     Args:
         name: ``"whitespace"`` for the fallback counter, or a tiktoken
               encoding name (e.g. ``"cl100k_base"``, ``"o200k_base"``).
@@ -96,6 +100,9 @@ def create_counter(name: str = "cl100k_base") -> TokenCounter:
     Returns:
         A TokenCounter instance.
     """
-    if name == "whitespace":
+    import os
+
+    effective = os.environ.get("ORIGINSCAN_TOKENIZER", name)
+    if effective == "whitespace":
         return WhitespaceCounter()
-    return TiktokenCounter(name)
+    return TiktokenCounter(effective)

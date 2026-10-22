@@ -1,0 +1,18 @@
+diff --git a/utils.c b/utils.c
+--- a/utils.c
++++ b/utils.c
+@@ -28,4 +28,5 @@ int compute_hash(Record* r) {
+     int hash = r->id * 31;
+     for (int i = 0; r->name[i]; i++) {
+         hash = hash * 31 + r->name[i];
++        hash ^= (hash >> 16);
+     }
+diff --git a/main.c b/main.c
+--- a/main.c
++++ b/main.c
+@@ -7,4 +7,5 @@ int main(int argc, char* argv[]) {
+     Record r = create_record(1, "test");
+     int result = process_and_validate(&r);
+     print_result(result);
++    log_message("done");
+     return 0;

@@ -55,8 +55,10 @@ originscan/                    # repo root
 │   ├── report/                # [P4]
 │   │   ├── json_report.py
 │   │   └── markdown_report.py
-│   ├── detect/                # [P5] (+ P3 static adapter); P4 provides FakeDetector in tests
-│   ├── policy/                # [P5] choose_start(), simulator, policy.yaml loader
+│   ├── detect/                # [P5] NOT YET PRESENT as a package; FakeDetector lives in
+│   │                          #       src/originscan/detectors.py for now (P4's stub)
+│   ├── policy/                # [P5] NOT YET PRESENT as a package; P4's policy.py and
+│   │                          #       runner.py provide choose_start() and policy loading
 │   ├── corpus/  labels/  stats/  dashboard/   # other owners
 ├── action/                    # [P4] action.yml, entrypoint, comment poster
 ├── .github/workflows/         # CI (tests) + example originscan workflow
