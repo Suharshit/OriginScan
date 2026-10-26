@@ -11,6 +11,8 @@ paths:
   split: data/split.csv
   grid_dir: data/grid
   cache_dir: data/cache
+  repos: data/repos     # one clone per repo, as <owner>__<name>/
+  bodies: data/bodies   # <slot_id>/<variant>.c; slots.csv code_path is relative to data/
 
 # Dev/test split rule: a repo is dev if SHA-256(lowercase owner/name) mod 5 == 0 (~20%)
 # Written by scripts/make_split.py. Set frozen: true when tuning starts; after that
@@ -33,7 +35,8 @@ tokenizer: cl100k_base   # estimate only; re-count per model in Phase 2
 detectors:
   cheap: null      # {provider, model_id, chosen_on}
   strong: null     # different family from cheap
-generators: []     # 2–3 entries: {provider, model_id, chosen_on}
+generators: []     # 2–3 entries: {key, provider, model_id, chosen_on}
+                   # key: short [a-z0-9-] name used in version_id (ai-<key>), e.g. g1
 temperature:
   detector: null
   generator: null
