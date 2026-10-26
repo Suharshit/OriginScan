@@ -90,3 +90,18 @@ Format: date · decision · rule/reason · where it lives.
 ### 2026-10-26 · Grid row and input file formats
 
 Formats defined in docs/data-model.md. After the first real run, fields can be added but not renamed or removed.
+
+### 2026-10-26 · One `choose_start`, default all-L1 (duplicate rule applied)
+
+- Three copies existed: `PolicyConfig.choose_level` in `policy.py` (reads `policy.yaml`,
+  CWE overrides; used by `scan`), `choose_start` in `runner.py` (own `DEFAULT_POLICY`
+  dict, human→L1, ai→L2), and the stub in `interfaces.py` (always L1).
+- Kept: `PolicyConfig.choose_level`. It is the only one that reads the real policy
+  file and CWE overrides, and the CLI already uses it. `runner.choose_start` and
+  `interfaces.choose_start` now delegate to it with unchanged signatures;
+  `runner.DEFAULT_POLICY` is removed.
+- Default is now all-L1 (confidence-only). Sending AI code to L2 by default assumed
+  an answer to RQ3 before the study gives one. Origin-aware start levels come only
+  from a `policy.yaml` exported in Phase 8.
+- P4's tests that expected AI→L2 by default now expect L1; tests of policy plumbing
+  use an explicit origin-aware policy instead of the default.

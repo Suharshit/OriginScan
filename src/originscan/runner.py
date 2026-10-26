@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING
 from originscan.context.builders import build_context
 from originscan.context.tokens import TokenCounter, create_counter
 from originscan.detectors import FakeDetector
+from originscan.policy import PolicyConfig, default_policy
 
 if TYPE_CHECKING:
     from originscan.context.builders import SlotResolver
@@ -40,14 +41,6 @@ logger = logging.getLogger(__name__)
 # choose_start — deterministic start-level chooser
 # ---------------------------------------------------------------------------
 
-# Default policy: human→L1, ai→L2, unknown→L1 (PRD FR-19)
-DEFAULT_POLICY: dict[str, Level] = {
-    "human": "L1",
-    "ai": "L2",
-    "unknown": "L1",
-}
-
-
 def choose_start(
     origin: Origin,
     cwe_family: str | None = None,
@@ -55,17 +48,21 @@ def choose_start(
 ) -> Level:
     """Choose the starting context level based on provenance.
 
+    Delegates to PolicyConfig.choose_level in policy.py, the only
+    implementation.
+
     Args:
         origin: Code provenance label (ai, human, unknown).
         cwe_family: Optional CWE family for policy-based overrides.
-        policy: Override policy dict (origin -> level).
-                Defaults to human→L1, ai→L2, unknown→L1.
+        policy: Override policy dict (origin -> level); origins it does
+                not list start at L1. Defaults to the default policy
+                (every origin starts at L1).
 
     Returns:
         The starting context level.
     """
-    p = policy if policy is not None else DEFAULT_POLICY
-    return p.get(origin, "L1")
+    config = default_policy() if policy is None else PolicyConfig(levels=dict(policy))
+    return config.choose_level(origin, cwe_family)
 
 
 # ---------------------------------------------------------------------------

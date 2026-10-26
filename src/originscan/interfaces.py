@@ -129,6 +129,9 @@ def detect(ctx: Context, detector: str, run: int) -> Finding:
 def choose_start(origin: Origin, cwe_family: str | None) -> Level:
     """Choose the starting context level based on provenance (P5-owned).
 
-    Stub — falls back to confidence-only default (always L1).
+    Delegates to PolicyConfig.choose_level in policy.py, the only
+    implementation, with the default policy (every origin starts at L1).
     """
-    return "L1"
+    from originscan.policy import default_policy
+
+    return default_policy().choose_level(origin, cwe_family)

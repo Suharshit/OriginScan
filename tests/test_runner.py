@@ -19,6 +19,7 @@ from originscan.context.index import RepoIndex
 from originscan.context.tokens import WhitespaceCounter
 from originscan.detectors import FakeDetector
 from originscan.interfaces import Context, DetectorAdapter
+from originscan.policy import PolicyConfig, default_policy
 from originscan.runner import (
     RunResult,
     Slot,
@@ -84,7 +85,8 @@ class TestChooseStart:
         assert choose_start("human") == "L1"
 
     def test_default_ai(self) -> None:
-        assert choose_start("ai") == "L2"
+        """Default is confidence-only: AI code starts at L1 too."""
+        assert choose_start("ai") == "L1"
 
     def test_default_unknown(self) -> None:
         assert choose_start("unknown") == "L1"
@@ -101,7 +103,16 @@ class TestChooseStart:
 
     def test_cwe_family_ignored_in_default(self) -> None:
         """CWE family is accepted but doesn't affect default policy."""
-        assert choose_start("ai", cwe_family="CWE-787") == "L2"
+        assert choose_start("ai", cwe_family="CWE-787") == "L1"
+
+    def test_matches_policy_config(self) -> None:
+        """runner.choose_start gives the same answer as PolicyConfig.choose_level."""
+        policy = {"human": "L1", "ai": "L3"}
+        for origin in ("human", "ai", "unknown"):
+            assert choose_start(origin) == default_policy().choose_level(origin)
+            assert choose_start(origin, policy=policy) == PolicyConfig(
+                levels=policy
+            ).choose_level(origin)
 
 
 # -----------------------------------------------------------------------
@@ -161,7 +172,7 @@ class TestRunExperiment:
             assert sr.detect_time_ms >= 0
 
     def test_level_selection_by_origin(self, slots: list[Slot]) -> None:
-        """Human→L1, AI→L2 via default policy."""
+        """Default policy is confidence-only: human and AI both start at L1."""
         result = run_experiment(slots)
         human_result = next(
             sr for sr in result.slot_results if sr.origin == "human"
@@ -170,7 +181,7 @@ class TestRunExperiment:
             sr for sr in result.slot_results if sr.origin == "ai"
         )
         assert human_result.level == "L1"
-        assert ai_result.level == "L2"
+        assert ai_result.level == "L1"
 
     def test_explicit_levels_override(self, slots: list[Slot]) -> None:
         """When levels are specified, all slots run at those levels."""
