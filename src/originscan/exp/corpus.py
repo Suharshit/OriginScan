@@ -2,6 +2,7 @@
 
 CorpusResolver implements context.builders.SlotResolver: human versions parse
 the original file; AI versions parse a temp copy with the AI body swapped in.
+P4's builders, parser and Finding are used as they are, not changed.
 
 Phase 1 (resolver) and Phase 2 (slots, split).
 """
@@ -10,12 +11,23 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlparse
 
+from tree_sitter import Parser
+
+from originscan.context.parser import detect_language, parse_source
+
 if TYPE_CHECKING:
-    from collections.abc import Iterable
-    from pathlib import Path
+    from collections.abc import Iterable, Mapping
+
+    from tree_sitter import Language, Node
+
+    from originscan.context.parser import Symbol
+    from originscan.interfaces import Origin
 
 Split = Literal["dev", "test"]
 
@@ -97,3 +109,137 @@ def read_split(path: Path) -> dict[str, Split]:
                 raise ValueError(f"{path}: bad split {value!r} for repo {row['repo']!r}")
             out[row["repo"]] = value  # type: ignore[assignment]
         return out
+
+
+# ---------------------------------------------------------------------------
+# CorpusResolver
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class VersionSource:
+    """Where one version's code lives, as CorpusResolver needs it."""
+
+    origin: Origin
+    function: str
+    """Target function name."""
+    file: str
+    """Repo-relative POSIX path (slots.csv ``file``). Used as ``Symbol.file``, so
+    function IDs match a RepoIndex / CallGraph built over the same repo."""
+    source_path: Path
+    """The original source file on disk."""
+    ai_body: str | None = None
+    """AI-written function body, braces included. Required for AI versions only."""
+
+    def __post_init__(self) -> None:
+        if (self.origin == "ai") != (self.ai_body is not None):
+            raise ValueError(
+                f"{self.function}@{self.file}: ai_body is required for AI versions "
+                f"and not allowed otherwise (origin={self.origin!r})"
+            )
+        if self.ai_body is not None:
+            body = self.ai_body.strip()
+            if not (body.startswith("{") and body.endswith("}")):
+                raise ValueError(f"{self.function}@{self.file}: ai_body must be a {{...}} block")
+
+
+class CorpusResolver:
+    """SlotResolver for corpus versions, keyed by ``version_id``.
+
+    Human versions parse the original file. AI versions write a temp copy of
+    the file with the AI body swapped in (signature and the rest of the file
+    unchanged) and parse that. Temp copies are removed by :meth:`close`.
+
+    Known gap: L3 takes callers/callees from the CallGraph passed to
+    build_context. A graph built over the original repo does not see an AI
+    body, so an AI version's L3 has no call-graph context yet.
+    """
+
+    def __init__(self, versions: Mapping[str, VersionSource]) -> None:
+        self._versions = dict(versions)
+        self._tmp: tempfile.TemporaryDirectory[str] | None = None
+
+    def resolve(self, slot_id: str) -> tuple[Symbol, list[Symbol]]:
+        """Return (target function, all symbols in its file) for a version_id."""
+        version = self._version(slot_id)
+        path = version.source_path if version.ai_body is None else self.swapped_copy(slot_id)
+        symbols = parse_source(path.read_bytes(), _language(version), version.file)
+        return _only_function(symbols, version), symbols
+
+    def swapped_copy(self, version_id: str) -> Path:
+        """Write (or reuse) the temp copy of an AI version's file and return its path."""
+        version = self._version(version_id)
+        if version.ai_body is None:
+            raise ValueError(f"{version_id!r} is not an AI version")
+        if self._tmp is None:
+            self._tmp = tempfile.TemporaryDirectory(prefix="originscan-corpus-")
+        key = hashlib.sha256(version_id.encode("utf-8")).hexdigest()[:16]
+        path = Path(self._tmp.name) / key / Path(version.file).name
+        if not path.exists():
+            source = version.source_path.read_bytes()
+            path.parent.mkdir(parents=True)
+            path.write_bytes(swap_body(source, _language(version), version, version.ai_body))
+        return path
+
+    def close(self) -> None:
+        """Remove all temp copies."""
+        if self._tmp is not None:
+            self._tmp.cleanup()
+            self._tmp = None
+
+    def __enter__(self) -> CorpusResolver:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
+    def _version(self, version_id: str) -> VersionSource:
+        try:
+            return self._versions[version_id]
+        except KeyError:
+            raise ValueError(f"unknown version_id {version_id!r}") from None
+
+
+def swap_body(source: bytes, lang: Language, version: VersionSource, body: str) -> bytes:
+    """Return *source* with the target function's ``{...}`` body replaced by *body*."""
+    target = _only_function(parse_source(source, lang, version.file), version)
+    node = _function_node(Parser(lang).parse(source).root_node, target)
+    old = node.child_by_field_name("body") if node is not None else None
+    if old is None:
+        raise ValueError(f"{version.function}@{version.file}: function body not found")
+    new = body.strip()
+    if b"\r\n" in source:
+        new = new.replace("\r\n", "\n").replace("\n", "\r\n")
+    return source[: old.start_byte] + new.encode("utf-8") + source[old.end_byte :]
+
+
+def _language(version: VersionSource) -> Language:
+    lang = detect_language(Path(version.file))
+    if lang is None:
+        raise ValueError(f"unsupported file type: {version.file}")
+    return lang
+
+
+def _only_function(symbols: list[Symbol], version: VersionSource) -> Symbol:
+    matches = [s for s in symbols if s.kind == "function" and s.name == version.function]
+    if len(matches) != 1:
+        raise ValueError(
+            f"expected one definition of {version.function!r} in {version.file}, "
+            f"found {len(matches)}"
+        )
+    return matches[0]
+
+
+def _function_node(root: Node, target: Symbol) -> Node | None:
+    """The function_definition node spanning exactly the target's lines."""
+    stack = [root]
+    while stack:
+        node = stack.pop()
+        if (
+            node.type == "function_definition"
+            and node.start_point[0] + 1 == target.start_line
+            and node.end_point[0] + 1 == target.end_line
+        ):
+            return node
+        stack.extend(node.children)
+    return None
