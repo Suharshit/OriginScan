@@ -105,3 +105,19 @@ Formats defined in docs/data-model.md. After the first real run, fields can be a
   from a `policy.yaml` exported in Phase 8.
 - P4's tests that expected AI→L2 by default now expect L1; tests of policy plumbing
   use an explicit origin-aware policy instead of the default.
+
+### 2026-10-26 · AI versions get their own call graph for L3
+
+- Bug found in `CorpusResolver` (#7): L3 took callers/callees from a CallGraph built
+  over the original repo, which never sees an AI body. An AI body with a different
+  line count was not found, so its L3 silently fell back to L2. One with the same line
+  count was found, and got the human version's callees.
+  Either way L3 was wrong for AI code only, which biases the origin × level comparison.
+- Fix: `CorpusResolver.graphs_for(version_id, index, graph)`. AI versions get a copy
+  of the repo index with only their file's symbols swapped, and a CallGraph rebuilt
+  from it (cached per version). Human versions get the repo's own index and graph,
+  after a check that the target is in the graph with the same text (catches an index
+  built at the wrong commit). The runner must pass these to `build_context`.
+- P4's index, call graph and builders are unchanged.
+- Cost to measure in the Phase 2 token pilot: one full CallGraph build per AI
+  version. If too slow on large repos, rebuild only edges touching the swapped file.

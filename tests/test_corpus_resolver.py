@@ -131,7 +131,8 @@ def test_build_context_all_levels(
     version_id: str,
     level: str,
 ) -> None:
-    ctx = context(resolver, version_id, level, index, graph)
+    idx, g = resolver.graphs_for(version_id, index, graph)
+    ctx = context(resolver, version_id, level, idx, g)
     assert ctx["tokens"] > 0
     assert ctx["items"][0].startswith("function:compute_hash@utils.c:")
     assert ("/* AI version */" in ctx["text"]) == version_id.endswith("-ai")
@@ -152,16 +153,105 @@ def test_human_l3_includes_callers(
     assert any(item.startswith("function:main@main.c") for item in ctx["items"])
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Known gap: the CallGraph is built over the original repo, so an AI "
-    "version's function ID (new line range) is not in it and L3 drops its callers.",
-)
+def l3_cross_file(resolver: CorpusResolver, version_id: str, index, graph) -> list[str]:
+    """Names of the cross-file functions in a version's L3, via graphs_for."""
+    idx, g = resolver.graphs_for(version_id, index, graph)
+    ctx = context(resolver, version_id, "L3", idx, g)
+    target_file = ctx["items"][0].split("@")[1].split(":")[0]
+    return sorted(
+        i.split(":")[1].split("@")[0] for i in ctx["items"][1:] if f"@{target_file}:" not in i
+    )
+
+
 def test_ai_l3_includes_callers(
     resolver: CorpusResolver, index: RepoIndex, graph: CallGraph
 ) -> None:
-    ctx = context(resolver, "compute_hash-ai", "L3", index, graph)
-    assert any(item.startswith("function:main@main.c") for item in ctx["items"])
+    """The AI body is a line shorter; its callers must still be found."""
+    assert l3_cross_file(resolver, "compute_hash-ai", index, graph) == ["main"]
+
+
+def test_ai_l3_callees_come_from_the_ai_body(index: RepoIndex, graph: CallGraph) -> None:
+    """Same line count as the original, so the old graph would match it and leak
+    the human version's callees (process_and_validate, compute_hash)."""
+    main_c = MULTIFILE / "main.c"
+    ai_main = (
+        "{\n"
+        '    Record r = create_record(2, "ai");\n'
+        "    print_result(r.id);\n"
+        '    puts("done");\n'
+        "    return 0;\n"
+        "}"
+    )
+    versions = {
+        "main-human": VersionSource("human", "main", "main.c", main_c),
+        "main-ai": VersionSource("ai", "main", "main.c", main_c, ai_body=ai_main),
+    }
+    with CorpusResolver(versions) as r:
+        target, _ = r.resolve("main-ai")
+        human_target, _ = r.resolve("main-human")
+        assert (target.start_line, target.end_line) == (
+            human_target.start_line,
+            human_target.end_line,
+        )
+        human = l3_cross_file(r, "main-human", index, graph)
+        ai = l3_cross_file(r, "main-ai", index, graph)
+    assert "process_and_validate" in human
+    assert ai == ["create_record", "log_message"]  # log_message via print_result, hop 2
+
+
+def test_ai_with_original_body_matches_human_l3(index: RepoIndex, graph: CallGraph) -> None:
+    """Swapping in the original body must give exactly the human L3."""
+    human_target, _ = PathResolver().resolve(f"compute_hash@{UTILS}")
+    body = human_target.text[human_target.text.index("{") :]
+    versions = {
+        "h": VersionSource("human", "compute_hash", "utils.c", UTILS),
+        "a": VersionSource("ai", "compute_hash", "utils.c", UTILS, ai_body=body),
+    }
+    with CorpusResolver(versions) as r:
+        for vid in ("h", "a"):
+            idx, g = r.graphs_for(vid, index, graph)
+            ctx = context(r, vid, "L3", idx, g)
+            if vid == "h":
+                human_ctx = ctx
+    assert ctx["text"] == human_ctx["text"]
+    assert ctx["items"] == human_ctx["items"]
+
+
+def test_graphs_for_human_returns_repo_graph(
+    resolver: CorpusResolver, index: RepoIndex, graph: CallGraph
+) -> None:
+    assert resolver.graphs_for("compute_hash-human", index, graph) == (index, graph)
+
+
+def test_graphs_for_human_rejects_wrong_commit(
+    tmp_path: Path, index: RepoIndex, graph: CallGraph
+) -> None:
+    """A human file that differs from the indexed one (e.g. another commit) is caught."""
+    shifted = tmp_path / "utils.c"
+    shifted.write_bytes(b"// one extra line\n" + UTILS.read_bytes())
+    v = VersionSource("human", "compute_hash", "utils.c", shifted)
+    with CorpusResolver({"h": v}) as r, pytest.raises(ValueError, match="commit"):
+        r.graphs_for("h", index, graph)
+
+
+def test_graphs_for_ai_is_cached(
+    resolver: CorpusResolver, index: RepoIndex, graph: CallGraph
+) -> None:
+    first = resolver.graphs_for("compute_hash-ai", index, graph)
+    again = resolver.graphs_for("compute_hash-ai", index, graph)
+    assert again[0] is first[0] and again[1] is first[1]  # built once
+    assert first[0] is not index  # the repo's own index is never modified
+    assert index.get_function("compute_hash").end_line == 34
+
+
+def test_graphs_for_ai_file_not_in_index(
+    index: RepoIndex, graph: CallGraph, tmp_path: Path
+) -> None:
+    other = tmp_path / "other.c"
+    other.write_text("int f(void) {\n    return 0;\n}\n", encoding="utf-8")
+    v = VersionSource("ai", "f", "other.c", other, ai_body="{ return 1; }")
+    with CorpusResolver({"a": v}) as r, pytest.raises(ValueError, match="not in the repo index"):
+        r.graphs_for("a", index, graph)
 
 
 # -----------------------------------------------------------------------
