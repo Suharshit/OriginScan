@@ -12,10 +12,13 @@ paths:
   grid_dir: data/grid
   cache_dir: data/cache
 
-# Dev/test split rule: a repo is dev if hash(repo name) mod 5 == 0 (~20%)
+# Dev/test split rule: a repo is dev if SHA-256(lowercase owner/name) mod 5 == 0 (~20%)
+# Written by scripts/make_split.py. Set frozen: true when tuning starts; after that
+# split.csv is never rewritten.
 split:
   modulus: 5
   dev_remainder: 0
+  frozen: false
 
 # Token caps passed to build_context(caps=...). Do not edit config/context.yaml.
 # Rule: ~95th percentile of measured sizes (Phase 2 token pilot).
