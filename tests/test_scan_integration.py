@@ -7,7 +7,7 @@ from pathlib import Path
 from originscan.context.diff import parse_diff
 from originscan.context.tokens import WhitespaceCounter
 from originscan.detectors import FakeDetector
-from originscan.policy import default_policy
+from originscan.policy import PolicyConfig, default_policy
 from originscan.provenance.git import CommitInfo, MockGit
 from originscan.provenance.reader import detect_origin
 from originscan.runner import RunResult, escalate_scan
@@ -67,14 +67,14 @@ class TestScanProvenancePipeline:
         assert human_result.origin == "human"
 
     def test_policy_level_selection(self) -> None:
-        """Default policy: human → L1, ai → L2."""
+        """Default policy is confidence-only: every origin starts at L1."""
         pol = default_policy()
         assert pol.choose_level("human") == "L1"
-        assert pol.choose_level("ai") == "L2"
+        assert pol.choose_level("ai") == "L1"
         assert pol.choose_level("unknown") == "L1"
 
-    def test_escalation_ai_starts_at_l2(self) -> None:
-        """AI-origin function starts at L2 via escalate_scan."""
+    def test_escalation_ai_starts_at_l1_by_default(self) -> None:
+        """AI-origin function starts at L1 via escalate_scan by default."""
         slot_id = f"compute_hash@{MULTIFILE / 'utils.c'}"
         results = escalate_scan(
             slot_id=slot_id,
@@ -85,7 +85,22 @@ class TestScanProvenancePipeline:
             max_level="L2",
         )
         assert len(results) >= 1
-        assert results[0].level == "L2"  # ai starts at L2
+        assert results[0].level == "L1"  # default policy: all L1
+
+    def test_escalation_ai_follows_policy(self) -> None:
+        """escalate_scan starts at the level the policy sets for the origin."""
+        slot_id = f"compute_hash@{MULTIFILE / 'utils.c'}"
+        results = escalate_scan(
+            slot_id=slot_id,
+            origin="ai",
+            detector=FakeDetector(base_confidence=0.95),
+            counter=WhitespaceCounter(),
+            policy={"human": "L1", "ai": "L2", "unknown": "L1"},
+            tau=0.7,
+            max_level="L2",
+        )
+        assert len(results) >= 1
+        assert results[0].level == "L2"
 
     def test_escalation_human_starts_at_l1(self) -> None:
         """Human-origin function starts at L1 via escalate_scan."""
@@ -129,11 +144,14 @@ class TestScanProvenancePipeline:
         # print_result is in main.c lines 14-20 → human commit
         git.add_line_commits("main.c", 14, 20, [human_commit])
 
-        pol = default_policy()
+        default = default_policy()
+        # An origin-aware policy, so the test shows origin reaching the level choice
+        origin_aware = PolicyConfig(levels={"human": "L1", "ai": "L2", "unknown": "L1"})
 
         # Simulate what scan does: per function, detect origin, choose level
         origins = {}
         levels = {}
+        default_levels = {}
 
         for file, start, end, name in [
             ("utils.c", 28, 34, "compute_hash"),
@@ -142,12 +160,14 @@ class TestScanProvenancePipeline:
             commits = git.commits_for_lines(file, start, end)
             prov = detect_origin(commits)
             origins[name] = prov.origin
-            levels[name] = pol.choose_level(prov.origin)
+            levels[name] = origin_aware.choose_level(prov.origin)
+            default_levels[name] = default.choose_level(prov.origin)
 
         assert origins["compute_hash"] == "ai"
         assert origins["print_result"] == "human"
-        assert levels["compute_hash"] == "L2"  # ai → L2
+        assert levels["compute_hash"] == "L2"  # ai → L2 under the origin-aware policy
         assert levels["print_result"] == "L1"  # human → L1
+        assert default_levels == {"compute_hash": "L1", "print_result": "L1"}
 
     def test_escalation_collects_into_run_result(self) -> None:
         """Escalation results can be collected into a RunResult."""

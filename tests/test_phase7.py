@@ -144,9 +144,10 @@ class TestMarkdownReport:
 
 class TestPolicy:
     def test_default_policy(self) -> None:
+        """Default is confidence-only: every origin starts at L1."""
         p = default_policy()
         assert p.choose_level("human") == "L1"
-        assert p.choose_level("ai") == "L2"
+        assert p.choose_level("ai") == "L1"
         assert p.choose_level("unknown") == "L1"
 
     def test_custom_policy(self) -> None:

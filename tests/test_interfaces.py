@@ -73,6 +73,12 @@ class TestStubs:
         with pytest.raises(NotImplementedError, match="P5"):
             detect(ctx, "fake", 1)
 
+    def test_choose_start_delegates_to_policy(self) -> None:
+        from originscan.policy import default_policy
+
+        for origin in ("ai", "human", "unknown"):
+            assert choose_start(origin, None) == default_policy().choose_level(origin)
+
     def test_choose_start_defaults_to_l1(self) -> None:
         """Confidence-only fallback: always returns L1."""
         assert choose_start("ai", None) == "L1"

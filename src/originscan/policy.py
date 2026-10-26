@@ -8,6 +8,9 @@ See PRD task 7.4.
 Public API:
     load_policy(path) -> PolicyConfig
     PolicyConfig.choose_level(origin, cwe_family) -> Level
+
+PolicyConfig.choose_level is the only start-level implementation;
+runner.choose_start and interfaces.choose_start delegate to it.
 """
 
 from __future__ import annotations
@@ -24,7 +27,11 @@ if TYPE_CHECKING:
 class PolicyConfig:
     """Policy configuration for level selection and escalation.
 
-    Loaded from policy.yaml with the structure::
+    The default is confidence-only: every origin starts at L1. Whether
+    origin should change the start level is RQ3, so the default must not
+    assume an answer (docs/decisions.md, 2026-10-26).
+
+    Loaded from policy.yaml with the structure (example values)::
 
         levels:
           human: L1
@@ -41,7 +48,7 @@ class PolicyConfig:
     """
 
     levels: dict[str, str] = field(
-        default_factory=lambda: {"human": "L1", "ai": "L2", "unknown": "L1"}
+        default_factory=lambda: {"human": "L1", "ai": "L1", "unknown": "L1"}
     )
     escalation_tau: float = 0.7
     escalation_max_level: str = "L3"
