@@ -79,6 +79,23 @@ code_path
 - `repo` is lowercase `owner/name` (e.g. `mm2/little-cms`), made by `exp/corpus.py`
   `normalize_repo()` (decision of 2026-10-26). The same text appears in the grid and
   in `split.csv`, and it is the exact input to the split hash.
+- `slot_id` is `srb-<SecRepoBench task id>` (e.g. `srb-910`): one target function.
+- `version_id` is `<slot_id>.<variant>` (decision of 2026-10-26). Characters are
+  lowercase letters, digits and `-`, with exactly one `.` between slot and variant:
+
+  | Variant | Code | `commit` | `origin` / `generator` |
+  | --- | --- | --- | --- |
+  | `human-pre` | the function before the fix | parent of the fixing commit | `human` / empty |
+  | `human-post` | the function after the fix | the fixing commit | `human` / empty |
+  | `ai-<gen>` | body written by generator `<gen>` | the fixing commit (the base the body is swapped into) | `ai` / `<gen>` |
+
+  `<gen>` is the generator's short key in `config/experiment.yaml`, not its model ID.
+  `commit` is always a full 40-character SHA, never `<sha>^`.
+- `code_path` is the version's function body (braces included), as a path relative to
+  `data/`: `bodies/<slot_id>/<variant>.c` (e.g. `bodies/srb-910/ai-g1.c`). For AI
+  versions it is the only copy of the generated code; for human versions it is the
+  body extracted by `scripts/make_slots.py`. The file itself is found from `repo`,
+  `commit` and `file` in the clone under `paths.repos`.
 
 ## `labels.csv`
 

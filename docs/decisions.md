@@ -9,6 +9,7 @@ Format: date · decision · rule/reason · where it lives.
 | Data source | SecRepoBench; PrimeVul pairs if its format is unusable | Oct 22 | Decided Oct 26 |
 | Dev/test split | Repo is dev if hash(repo name) mod 5 = 0 | Oct 22 | Decided Oct 26 |
 | Duplicate rule | Keep the copy that runs on real data, passes tests and matches the data model | — | Decided Oct 26 |
+| `version_id`, `code_path`, AI base commit | `<slot_id>.<variant>`; `code_path` = stored body; AI bodies go into the fixing commit | — | Decided Oct 26 |
 | Token caps | About the 95th percentile of measured sizes | Oct 25 | Open |
 | Money cap | Cheapest of the 3 budget options that still covers RQ1–RQ3 | Oct 25 | Open |
 | Models | 2 detectors from different families; 2–3 generators; fits the cap | Oct 25 | Open |
@@ -121,3 +122,29 @@ Formats defined in docs/data-model.md. After the first real run, fields can be a
 - P4's index, call graph and builders are unchanged.
 - Cost to measure in the Phase 2 token pilot: one full CallGraph build per AI
   version. If too slow on large repos, rebuild only edges touching the swapped file.
+
+### 2026-10-26 · `version_id` format, `code_path` meaning, AI base commit
+
+- `slot_id` = `srb-<SecRepoBench task id>`: one target function. The 318 task ids are
+  unique and numeric. `version_id` = `<slot_id>.<variant>`, with variants
+  `human-pre`, `human-post` and `ai-<gen>`, where `<gen>` is a generator key from
+  `config/experiment.yaml`. Allowed characters: lowercase letters, digits, `-`,
+  plus one `.` separator.
+  - Reason: safe as a file name (no `:` or `/`, which matters on Windows); splits into
+    slot and variant with one `split(".")`; built only from the source id, so stable;
+    the `srb-` prefix leaves room for LLMVul rows (`llmvul-...`).
+- `code_path` = path under `data/` to the version's function body:
+  `bodies/<slot_id>/<variant>.c`. The source file comes from `repo` + `commit` +
+  `file` in the clone under `paths.repos`, so `code_path` only has to locate the body.
+  Human bodies are stored too (uniform rows; F7 copy check reads bodies directly;
+  `make_slots.py` can check that a re-extracted body matches the stored one).
+- AI bodies are swapped into the **fixing commit**, the same base as `human-post`.
+  - Reason: SecRepoBench evaluates completions with the project at the fixing commit
+    and uses the parent only to confirm the crash ("revert the project to the fixing
+    commit state"), so plan B labels can reuse their setup. Each task's fix modifies
+    only one function, so the fixing and parent repos differ only in the target
+    function; the base choice does not change the surrounding context.
+  - Source: SecRepoBench paper, arXiv 2504.21205v3.
+  - First proposal was the parent commit; changed after checking the paper.
+- Size: 318 slots, 636 commits (no two tasks share a fixing commit), 171 distinct
+  files. With 2–3 generators, that is 1,272–1,590 versions.
