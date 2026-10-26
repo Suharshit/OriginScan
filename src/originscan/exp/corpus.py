@@ -19,6 +19,8 @@ from urllib.parse import urlparse
 
 from tree_sitter import Parser
 
+from originscan.context.callgraph import CallGraph
+from originscan.context.index import RepoIndex
 from originscan.context.parser import detect_language, parse_source
 
 if TYPE_CHECKING:
@@ -150,14 +152,16 @@ class CorpusResolver:
     the file with the AI body swapped in (signature and the rest of the file
     unchanged) and parse that. Temp copies are removed by :meth:`close`.
 
-    Known gap: L3 takes callers/callees from the CallGraph passed to
-    build_context. A graph built over the original repo does not see an AI
-    body, so an AI version's L3 has no call-graph context yet.
+    For L3, pass build_context the index and graph from :meth:`graphs_for`,
+    not the repo's own: a graph built over the original repo does not see an
+    AI body.
     """
 
     def __init__(self, versions: Mapping[str, VersionSource]) -> None:
         self._versions = dict(versions)
         self._tmp: tempfile.TemporaryDirectory[str] | None = None
+        # version_id -> (base index it was built from, swapped index, graph)
+        self._graphs: dict[str, tuple[RepoIndex, RepoIndex, CallGraph]] = {}
 
     def resolve(self, slot_id: str) -> tuple[Symbol, list[Symbol]]:
         """Return (target function, all symbols in its file) for a version_id."""
@@ -181,8 +185,58 @@ class CorpusResolver:
             path.write_bytes(swap_body(source, _language(version), version, version.ai_body))
         return path
 
+    def graphs_for(
+        self, version_id: str, index: RepoIndex, graph: CallGraph
+    ) -> tuple[RepoIndex, CallGraph]:
+        """Index and call graph to pass to build_context for this version.
+
+        *index* and *graph* are the repo's own, built at the version's commit.
+        Human versions get them back unchanged, after checking the target is in
+        the graph with the same text (catches an index from the wrong commit).
+        AI versions get a copy of *index* with only their file's symbols
+        swapped, and a CallGraph built from it, so L3 callers and callees come
+        from the AI body. Built once per version and cached.
+        """
+        version = self._version(version_id)
+        target, file_symbols = self.resolve(version_id)
+
+        if version.ai_body is None:
+            found = graph.get_symbol(graph.fn_id_for(target))
+            if found is None or found.text != target.text:
+                raise ValueError(
+                    f"{version_id!r}: {version.function}@{version.file} is not in the "
+                    "call graph as resolved; was the index built at this version's commit?"
+                )
+            return index, graph
+
+        cached = self._graphs.get(version_id)
+        if cached is not None and cached[0] is index:
+            return cached[1], cached[2]
+
+        if version.file not in index.symbols_by_file:
+            raise ValueError(f"{version_id!r}: {version.file} is not in the repo index")
+        by_file = dict(index.symbols_by_file)  # keeps file order, so name resolution is unchanged
+        by_file[version.file] = file_symbols
+        by_name: dict[str, list[Symbol]] = {}
+        for symbols in by_file.values():
+            for s in symbols:
+                by_name.setdefault(s.name, []).append(s)
+        swapped = RepoIndex(
+            root=index.root,
+            commit=f"{index.commit}+{version_id}",
+            symbols_by_file=by_file,
+            symbols_by_name=by_name,
+            files_parsed=index.files_parsed,
+            files_failed=index.files_failed,
+            parse_warnings=index.parse_warnings,
+        )
+        swapped_graph = CallGraph.build(swapped)
+        self._graphs[version_id] = (index, swapped, swapped_graph)
+        return swapped, swapped_graph
+
     def close(self) -> None:
-        """Remove all temp copies."""
+        """Remove all temp copies and cached graphs."""
+        self._graphs.clear()
         if self._tmp is not None:
             self._tmp.cleanup()
             self._tmp = None
