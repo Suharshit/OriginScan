@@ -5,7 +5,7 @@ Format: date · decision · rule/reason · where it lives.
 
 | Decision | Rule | Decide by | Status |
 | --- | --- | --- | --- |
-| Grid row and input file formats | As listed in P5 Phase 1 | Oct 20 | Open |
+| Grid row and input file formats | As listed in P5 Phase 1 | Oct 20 | Decided Oct 26 |
 | Data source | SecRepoBench; PrimeVul pairs if its format is unusable | Oct 22 | Decided Oct 26 |
 | Dev/test split | Repo is dev if hash(repo name) mod 5 = 0 | Oct 22 | Decided Oct 26 |
 | Duplicate rule | Keep the copy that runs on real data, passes tests and matches the data model | — | Decided Oct 26 |
@@ -86,3 +86,7 @@ Format: date · decision · rule/reason · where it lives.
   3. matches the data model (`docs/data-model.md`).
 - The paper and the tool use only the kept copy. Each time the rule is applied, add an
   entry here naming both copies, which one was kept, and why.
+
+### 2026-10-26 · Grid row and input file formats
+
+Formats defined in docs/data-model.md. After the first real run, fields can be added but not renamed or removed.
