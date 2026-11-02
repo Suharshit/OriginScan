@@ -33,10 +33,48 @@ tokenizer: cl100k_base   # estimate only; re-count per model in Phase 2
 
 # Models: exact IDs and the date chosen (Phase 3)
 detectors:
-  cheap: null      # {provider, model_id, chosen_on}
-  strong: null     # different family from cheap
-generators: []     # 2–3 entries: {key, provider, model_id, chosen_on}
-                   # key: short [a-z0-9-] name used in version_id (ai-<key>), e.g. g1
+  cheap:           # self-hosted on Kaggle (2x T4) with vLLM; exact model picked in the token pilot
+    provider: vllm
+    model_id: null   # 7-14B Qwen coder, set after the Kaggle pilot (Nov 3)
+    chosen_on: null
+  strong:          # different family from cheap. PROVISIONAL: option B (see decisions.md 2026-11-02)
+    provider: openrouter
+    model_id: nvidia/nemotron-3-ultra-550b-a55b:free
+    chosen_on: 2026-11-02
+generators:        # key is used in version_id as ai-<key>
+  - key: g1
+    provider: groq
+    model_id: qwen/qwen3.8-27b
+    chosen_on: 2026-11-02
+  - key: g2
+    provider: google
+    model_id: models/gemma-4-31b-it   # exact ID from: python scripts/smoke_models.py --list google gemma
+    chosen_on: 2026-11-02
+
+# OpenAI-compatible endpoints. Keys come from .env (names below), never from this file.
+# Limits are what each console showed on 2026-11-02 (free tier, per account).
+providers:
+  groq:
+    base_url: https://api.groq.com/openai/v1
+    api_key_env: GROQ_API_KEY
+    rpm: 30            # per model; also 1,000 req/day, 8k tokens/min, 200k tokens/day
+    max_input_tokens: 7000   # a request over the 8k TPM limit is refused, so no L3 on Groq
+  openrouter:
+    base_url: https://openrouter.ai/api/v1
+    api_key_env: OPENROUTER_API_KEY
+    rpm: 20            # 50 req/day free; 1,000 req/day after the one-time $10 top-up
+  google:              # Google AI Studio (Gemini API), OpenAI-compatible endpoint, own free key
+    base_url: https://generativelanguage.googleapis.com/v1beta/openai
+    api_key_env: GEMINI_API_KEY
+    rpm: 30            # Gemma 4 free tier seen Nov 2: 30 RPM, 16k tokens/min, 14,400 req/day
+  cerebras:            # deferred: needs a card on file; backup home for the strong detector
+    base_url: https://api.cerebras.ai/v1
+    api_key_env: CEREBRAS_API_KEY
+    rpm: 5
+  vllm:
+    base_url: http://localhost:8000/v1
+    api_key_env: VLLM_API_KEY
+    rpm: null
 temperature:
   detector: null
   generator: null
@@ -49,4 +87,4 @@ lambda: null       # cost weight: accuracy - lambda * (tokens / tokens_L3)
 p_origin_start: {} # origin -> start level, learned on dev
 
 # Budget (Phase 2)
-money_cap_usd: null
+money_cap_usd: 10   # one-time OpenRouter top-up (1,000 req/day); everything else free

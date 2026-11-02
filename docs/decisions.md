@@ -11,8 +11,8 @@ Format: date · decision · rule/reason · where it lives.
 | Duplicate rule | Keep the copy that runs on real data, passes tests and matches the data model | — | Decided Oct 26 |
 | `version_id`, `code_path`, AI base commit | `<slot_id>.<variant>`; `code_path` = stored body; AI bodies go into the fixing commit | — | Decided Oct 26 |
 | Token caps | About the 95th percentile of measured sizes | Oct 25 | Open |
-| Money cap | Cheapest of the 3 budget options that still covers RQ1–RQ3 | Oct 25 | Open |
-| Models | 2 detectors from different families; 2–3 generators; fits the cap | Oct 25 | Open |
+| Money cap | Cheapest of the 3 budget options that still covers RQ1–RQ3 | Oct 25 | Decided Nov 2 ($10) |
+| Models | 2 detectors from different families; 2–3 generators; fits the cap | Oct 25 | Decided Nov 2 (cheap model after Kaggle pilot) |
 | Confidence signal for escalation | 3-run agreement, same as the study | Oct 25 | Open |
 | Embedding model for D3 | Best same-CWE top-3 hit rate on dev | Nov 8 | Open |
 | Start plan B labels? | Only if no AI labels exist by Nov 15 | Nov 15 | Open |
@@ -148,3 +148,49 @@ Formats defined in docs/data-model.md. After the first real run, fields can be a
   - First proposal was the parent commit; changed after checking the paper.
 - Size: 318 slots, 636 commits (no two tasks share a fixing commit), 171 distinct
   files. With 2–3 generators, that is 1,272–1,590 versions.
+
+### 2026-11-02 · Models, providers and money cap (open-weight only)
+
+- **Rule:** open-weight models only, free tiers + self-hosting, so the study is reproducible
+  and costs at most $10. Exact IDs copied from each provider's console on 2026-11-02.
+
+| Role | Model ID | Provider | Free limit seen on Nov 2 |
+| --- | --- | --- | --- |
+| Generator g1 | `qwen/qwen3.8-27b` | Groq | 30 RPM, 1k req/day, 8k TPM, 200k tokens/day |
+| Generator g2 | `models/gemma-4-31b-it` | Google AI Studio (own free key) | 30 RPM, 16k tokens/min, 14,400 req/day |
+| Strong detector | `nvidia/nemotron-3-ultra-550b-a55b:free` (provisional) | OpenRouter | same; 1M context |
+| Cheap detector | 7–14B Qwen coder (set after pilot) | vLLM on Kaggle 2× T4 | 30 GPU h/week, no token cap |
+
+- **Why not Groq for the strong detector:** Groq's free tier allows 8k tokens per minute,
+  and a request larger than that is refused. L3 contexts are capped at 15k tokens, so L3
+  cannot run on Groq at all, and 200k tokens/day would need ~28 days for ~5.6M tokens.
+  Groq is used for g1 (≈7k tokens per call) and for L1/L2 smoke tests only.
+- **Why not Cerebras now:** API keys need a card on file before they work. Deferred; it
+  stays the backup home for the strong detector (gpt-oss-120b) if OpenRouter fails.
+- **Strong detector, option B chosen provisionally:** Nemotron 3 Ultra on OpenRouter with a
+  one-time $10 top-up (1,000 req/day). A strong-detector run is ~900 calls, about one day.
+  Option A (gpt-oss-120b on Cerebras) is a one-line config change if the team prefers it.
+- **Families (for RQ4):** generators Qwen (g1) and Gemma (g2); detectors Qwen coder (cheap)
+  and NVIDIA Nemotron (strong). Same-family pair: g1 × cheap. Cross-family: everything else.
+- **Risks:** free OpenRouter models can be renamed or removed → generate all AI versions
+  early and freeze them; record `provider`, `model_id` and date in every grid row.
+  Free providers may log prompts → acceptable, all inputs are public CVE code.
+- Money cap: `money_cap_usd: 10`. Removed `anthropic` and `google-genai` from the `exp` extras.
+- Where it lives: `config/experiment.yaml` (`detectors`, `generators`, `providers`),
+  `.env.example`, `docs/setup-models.md`.
+
+**Smoke test, 2026-11-02 (`scripts/smoke_models.py --big`):**
+- Nemotron 3 Ultra (OpenRouter) and Qwen 3.8 27B (Groq): OK.
+- Groq refused an L3-size prompt: HTTP 413 "Request too large … TPM: Limit 8000,
+  Requested 14400". Confirms: no L3 on Groq's free tier.
+- `google/gemma-4-31b-it:free` returned HTTP 429 "temporarily rate-limited upstream"
+  (Google AI Studio) on every retry → g2 switched to `google/gemma-4-26b-a4b-it:free`
+  (same Gemma family, so the RQ4 family pairs are unchanged). If both stay busy, plug a
+  free Google AI Studio key into OpenRouter (Settings → Integrations) or call it directly.
+- The college Wi-Fi inspects HTTPS (certificate errors even with `truststore`); the test
+  passed on a personal network. Run API jobs off campus or on Kaggle.
+- The 26B free model on OpenRouter was also rate-limited upstream. Final for g2: **Gemma 4
+  31B called directly on Google AI Studio with our own free key** (no card). Free limits
+  seen Nov 2: 30 RPM, 16k tokens/min, 14,400 req/day; at ~7k tokens per generation that is
+  ~2 calls/min, so 150 generations take ~75 minutes. Fastest of the three free providers.
+
