@@ -72,7 +72,8 @@ def call(base_url: str, key: str, model: str, prompt: str, max_tokens: int) -> s
             time.sleep(15 * (attempt + 1))
     u = r.get("usage", {})
     text = (r["choices"][0]["message"].get("content") or "").strip().replace("\n", " ")
-    return f"{time.time() - t:5.1f}s  tokens in/out={u.get('prompt_tokens')}/{u.get('completion_tokens')}  reply={text[:40]!r}"
+    tokens = f"{u.get('prompt_tokens')}/{u.get('completion_tokens')}"
+    return f"{time.time() - t:5.1f}s  tokens in/out={tokens}  reply={text[:40]!r}"
 
 
 def list_models(p: dict, filt: str) -> int:
