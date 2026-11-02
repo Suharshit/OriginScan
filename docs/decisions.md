@@ -159,7 +159,7 @@ Formats defined in docs/data-model.md. After the first real run, fields can be a
 | Generator g1 | `qwen/qwen3.8-27b` | Groq | 30 RPM, 1k req/day, 8k TPM, 200k tokens/day |
 | Generator g2 | `models/gemma-4-31b-it` | Google AI Studio (own free key) | 30 RPM, 16k tokens/min, 14,400 req/day |
 | Strong detector | `nvidia/nemotron-3-ultra-550b-a55b:free` (provisional) | OpenRouter | same; 1M context |
-| Cheap detector | 7–14B Qwen coder (set after pilot) | vLLM on Kaggle 2× T4 | 30 GPU h/week, no token cap |
+| Cheap detector | `Qwen/Qwen2.5-Coder-14B-Instruct-AWQ` | vLLM on Kaggle 2× T4 | 30 GPU h/week, no token cap |
 
 - **Why not Groq for the strong detector:** Groq's free tier allows 8k tokens per minute,
   and a request larger than that is refused. L3 contexts are capped at 15k tokens, so L3
@@ -193,4 +193,31 @@ Formats defined in docs/data-model.md. After the first real run, fields can be a
   31B called directly on Google AI Studio with our own free key** (no card). Free limits
   seen Nov 2: 30 RPM, 16k tokens/min, 14,400 req/day; at ~7k tokens per generation that is
   ~2 calls/min, so 150 generations take ~75 minutes. Fastest of the three free providers.
+
+### 2026-11-02 · Cheap detector: Qwen2.5-Coder-14B-Instruct-AWQ on Kaggle 2× T4 (vLLM pilot)
+
+- **Setup that works:** Kaggle GPU T4 x2, vLLM 0.33.0, torch 2.14.0+cu130, torchvision
+  0.29.0+cu130. `torchaudio` must be uninstalled (Kaggle's copy is built for CUDA 12.8 and
+  breaks the `transformers` import). Serve args: `--dtype half --tensor-parallel-size 2
+  --max-model-len 16384 --gpu-memory-utilization 0.90`. Server start incl. download: 290 s.
+  Notebook: `notebooks/kaggle_vllm_pilot.ipynb`.
+- **Measured (synthetic L3-size prompt, 16,185 Qwen tokens, max 200 output tokens):**
+
+| Requests in parallel | Prompts | p50 latency | Max latency | Input throughput |
+| --- | --- | --- | --- | --- |
+| 1 | 5 | 11.5 s | 14.1 s | 1,577 tok/s |
+| 4 | 20 | 7.8 s | 37.0 s | 3,725 tok/s |
+
+  GPU memory: 13.8 / 15.4 GB per card (vLLM pre-allocates 90%).
+- **Budget:** the cheap detector's ~17M input tokens take ~1.3 GPU-hours at 4-way
+  concurrency (~3 h one at a time), plus ~5 min start-up per session; well inside 30 GPU
+  h/week. k=3 at all levels is affordable. Runner should send 4 requests in parallel.
+- **Token-count risk:** the prompt measured 16,185 tokens with Qwen's tokenizer, while
+  L3 caps are counted with `cl100k_base`. A real L3 context near 15k (cl100k) may exceed
+  the 16,384 server limit. Re-count caps with the Qwen tokenizer in the Phase 2 token pilot;
+  if needed raise `--max-model-len` to 20,480 (4×16k fitted in memory).
+- **Quality note (one sample, not evidence):** without the d2_v1 prompt and with 450 filler
+  helpers, the model answered "not vulnerable, confidence 1.0" for an obvious `strcpy`
+  overflow. Judge quality only in the dev pilot with the real prompt.
+- **Families (RQ4):** cheap detector Qwen, same family as generator g1 (Qwen 3.8 27B).
 

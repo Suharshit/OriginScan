@@ -33,10 +33,16 @@ tokenizer: cl100k_base   # estimate only; re-count per model in Phase 2
 
 # Models: exact IDs and the date chosen (Phase 3)
 detectors:
-  cheap:           # self-hosted on Kaggle (2x T4) with vLLM; exact model picked in the token pilot
+  cheap:           # self-hosted on Kaggle (2x T4) with vLLM; see notebooks/kaggle_vllm_pilot.ipynb
     provider: vllm
-    model_id: null   # 7-14B Qwen coder, set after the Kaggle pilot (Nov 3)
-    chosen_on: null
+    model_id: Qwen/Qwen2.5-Coder-14B-Instruct-AWQ
+    chosen_on: 2026-11-02
+    serve:           # vLLM 0.33.0, torch 2.14.0+cu130 (torchaudio uninstalled)
+      dtype: half
+      tensor_parallel_size: 2
+      max_model_len: 16384
+      gpu_memory_utilization: 0.90
+      concurrency: 4   # parallel requests: 3,725 input tok/s vs 1,577 one at a time
   strong:          # different family from cheap. PROVISIONAL: option B (see decisions.md 2026-11-02)
     provider: openrouter
     model_id: nvidia/nemotron-3-ultra-550b-a55b:free
@@ -74,7 +80,7 @@ providers:
   vllm:
     base_url: http://localhost:8000/v1
     api_key_env: VLLM_API_KEY
-    rpm: null
+    rpm: null          # no rate limit; Kaggle quota is 30 GPU h/week
 temperature:
   detector: null
   generator: null
